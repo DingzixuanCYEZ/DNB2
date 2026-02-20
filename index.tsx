@@ -795,8 +795,7 @@ const styles = `
 function getPillName(pill: Pill): string {
   const realmName = REALMS[pill.realm] || '未知';
   let subName = '';
-  // 灵元丹现在也有小境界了
-  if (pill.subRealm !== undefined && pill.type !== 'heavenly') {
+  if (pill.subRealm !== undefined && pill.type !== 'spirit' && pill.type !== 'heavenly') {
     const subNames = ['前期', '中期', '后期', '圆满', '大圆满'];
     subName = subNames[pill.subRealm] || '';
   }
@@ -808,8 +807,9 @@ function getPillName(pill: Pill): string {
       else if (pill.grade === 'high') gradeName = '优品';
       else gradeName = '次品'; 
   } else if (pill.type === 'foundation') {
-      if (pill.grade === 'virtual') gradeName = '虚品';
-      else gradeName = '实品';
+      // 修复：明确区分实品和虚品，旧数据默认视为虚品，避免错误的“实品”显示
+      if (pill.grade === 'real') gradeName = '实品';
+      else gradeName = '虚品'; 
   } else {
       switch(pill.grade) {
         case 'low': gradeName = '下品'; break;
@@ -819,17 +819,15 @@ function getPillName(pill: Pill): string {
         case 'human': gradeName = '人品'; break;
         case 'earth': gradeName = '地品'; break;
         case 'heaven': gradeName = '天品'; break;
+        default: gradeName = '下品';
       }
   }
 
-  // 命名格式：[境界][小境界]·[品级][名称] (有小境界时)
-  // [境界]期·[品级][名称] (无小境界时，如通天渡厄丹)
   if (pill.type === 'heavenly') {
       return `${realmName}期·${gradeName}通天渡厄丹`;
   } else {
-      // 灵元丹/凝神丹/护基丹 都有小境界
       const pName = pill.type === 'spirit' ? '灵元丹' : pill.type === 'focus' ? '凝神丹' : '护基丹';
-      return `${realmName}${subName}·${gradeName}${pName}`;
+      return `${realmName}期${subName}·${gradeName}${pName}`;
   }
 }
 
@@ -1713,21 +1711,35 @@ const Game = () => {
         // Foundation Pill Effect
         if (usedPill.type === 'foundation') {
             if ([1, 3, 5].includes(nextCultivation.stage)) {
-                // Must be >= User SubRealm
                 const userSubRealm = Math.floor((nextCultivation.stage - 1) / 2);
-                if (usedPill.realm > nextCultivation.realmLevel || (usedPill.realm === nextCultivation.realmLevel && (usedPill.subRealm ?? -1) >= userSubRealm)) {
-                    // Logic: If Pill > User, it's considered Real regardless.
-                    // If Pill == User: Real is Real, Virtual is Virtual.
+                
+                // 计算线性值进行比较
+                const userVal = nextCultivation.realmLevel * 10 + userSubRealm;
+                const pillVal = usedPill.realm * 10 + (usedPill.subRealm ?? 0);
+
+                if (pillVal >= userVal) {
+                    let effectiveType = 'virtual';
                     
-                    let effectiveType = usedPill.grade; // virtual or real
-                    if (usedPill.realm > nextCultivation.realmLevel) effectiveType = 'real';
+                    // 逻辑：如果丹药 > 自身，或者是同级实品，则为实品效果
+                    if (pillVal > userVal) {
+                        effectiveType = 'real';
+                    } else if (pillVal === userVal && usedPill.grade === 'real') {
+                        effectiveType = 'real';
+                    }
                     
                     if (effectiveType === 'real') {
-                        protectXP = true; // Lock
-                        pillEffectLog = `实品护基丹激活: 若突破失败将锁定修为`;
+                        protectXP = true; // 锁定逻辑
+                        pillEffectLog = `实品护基丹激活(含阶位压制): 若突破失败将锁定修为`;
+                        // 这是一个临时标记，告诉下面的逻辑它是实品保护
+                        // 我们用一个特殊的变量名来传递这个状态给下面计算分数的逻辑
+                        // 由于 protectXP 只是个 boolean，我们需要区分虚/实
+                        // 建议在 saveResults 作用域顶端定义 let foundationEffect = 'none'; // 'none', 'real', 'virtual'
                     } else {
-                        // Virtual: Average
-                        protectXP = false; // Handled specially in cultivation update
+                        // 虚品且同级
+                        protectXP = false; 
+                        // 这里需要传递虚品状态给下面的计算逻辑
+                        // 为了不破坏现有结构，我们利用 protectXP 变量含义的局限性
+                        // 建议修改下面的计算逻辑来读取 usedPill
                         pillEffectLog = `虚品护基丹激活: 若突破失败将减缓修为倒退`;
                     }
                 } else {
@@ -1782,59 +1794,82 @@ const Game = () => {
         }
     }
 
-    // 2. Foundation Pill (Score Drop Logic - Updated)
+// 2. Foundation Pill (护基丹掉落逻辑重构)
     const dropRealmBase = Math.floor(difficulty);
     if (dropRealmBase > 0) {
-         // Targets for dropRealmBase (Early, Mid, Late)
+         // 获取三个小境界瓶颈的目标分数
+         // index 0: 前期->中期 (对应 SubRealm 0)
+         // index 1: 中期->后期 (对应 SubRealm 1)
+         // index 2: 后期->圆满 (对应 SubRealm 2)
          const targets = [
              getBreakthroughTarget(dropRealmBase, 1),
              getBreakthroughTarget(dropRealmBase, 3),
              getBreakthroughTarget(dropRealmBase, 5)
          ];
          
-         // Iterate High to Low to find highest qualified pill
-         // Late (Index 2)
-         let chosenSub: SubRealm | null = null;
-         let chosenGrade: PillGrade = 'virtual';
-         
-         if (calculatedScore >= 0.6 * targets[2]) {
-             chosenSub = 2;
-             if (calculatedScore >= targets[2]) chosenGrade = 'real';
-         } else if (calculatedScore >= 0.6 * targets[1]) {
-             chosenSub = 1;
-             if (calculatedScore >= targets[1]) chosenGrade = 'real';
-         } else if (calculatedScore >= 0.6 * targets[0]) {
-             chosenSub = 0;
-             if (calculatedScore >= targets[0]) chosenGrade = 'real';
-         }
-         
-         if (chosenSub !== null) {
-             // Filter: Pill >= User
-             const userRealm = nextCultivation.realmLevel;
-             // Determine current user subrealm index roughly
-             let currentUserSub = 0;
-             if (nextCultivation.stage >= 6) currentUserSub = 3;
-             else if (nextCultivation.stage >= 4) currentUserSub = 2;
-             else if (nextCultivation.stage >= 2) currentUserSub = 1;
+         // 计算当前用户的可比对 SubRealm (用于过滤)
+         const userRealm = nextCultivation.realmLevel;
+         let currentUserSub = 0;
+         if (nextCultivation.stage >= 6) currentUserSub = 3;
+         else if (nextCultivation.stage >= 4) currentUserSub = 2;
+         else if (nextCultivation.stage >= 2) currentUserSub = 1;
+         else currentUserSub = 0;
+
+         let foundPill = null;
+
+         // 从高到低遍历 (后期 -> 中期 -> 前期)，以获得“对应的最高境界”
+         for (let i = 2; i >= 0; i--) {
+             const target = targets[i];
+             if (target <= 0) continue; // 防御性检查
+
+             // 判定标准：
+             // 实品：分数 >= 瓶颈要求
+             // 虚品：分数 >= 瓶颈要求 * 0.6 (且 < 下一级的要求，但这里通过从高到低遍历解决)
              
-             let isUseful = false;
-             if (dropRealmBase > userRealm) isUseful = true;
-             else if (dropRealmBase === userRealm && chosenSub >= currentUserSub) isUseful = true;
+             let grade: PillGrade | null = null;
              
-             if (isUseful) {
-                 acquiredPills.push({
-                     id: Date.now().toString() + 'fd',
-                     type: 'foundation',
-                     realm: dropRealmBase,
-                     subRealm: chosenSub,
-                     grade: chosenGrade, 
-                     timestamp: Date.now() + 1 
-                 });
+             if (calculatedScore >= target) {
+                 grade = 'real';
+             } else if (calculatedScore >= target * 0.6) {
+                 grade = 'virtual';
+             }
+
+             if (grade) {
+                 // 命中区间，检查是否满足“境界高于自己”或“同境界但小境界>=自己”
+                 // 您的要求：境界 <= 自己就不要出现。这里特指大境界低于，或者同大境界且小境界低于的情况。
+                 
+                 let isUseful = false;
+                 if (dropRealmBase > userRealm) {
+                     isUseful = true;
+                 } else if (dropRealmBase === userRealm) {
+                     // i 是丹药的小境界 (0,1,2), currentUserSub 是用户的小境界
+                     if (i >= currentUserSub) {
+                         isUseful = true;
+                     }
+                 }
+
+                 if (isUseful) {
+                     foundPill = {
+                         sub: i as SubRealm,
+                         grade: grade
+                     };
+                     break; // 找到了最高境界符合条件的，停止遍历
+                 }
              }
          }
-    }
-    
-    // 3. Heavenly Pill
+         
+         if (foundPill) {
+             acquiredPills.push({
+                 id: Date.now().toString() + 'fd',
+                 type: 'foundation',
+                 realm: dropRealmBase,
+                 subRealm: foundPill.sub,
+                 grade: foundPill.grade, 
+                 timestamp: Date.now() + 1 
+             });
+         }
+    }    
+// 3. Heavenly Pill
     if (dropRealmBase > 0) {
         let hGrade: PillGrade | null = null;
         if (totalAccVal === 100) hGrade = 'heaven';
@@ -1842,7 +1877,7 @@ const Game = () => {
         else if (totalAccVal >= 80) hGrade = 'human';
         
         if (hGrade) {
-             // Filter: Realm > Self
+             // 严格检查：只有当 掉落境界 > 自身境界 时才获得
              if (dropRealmBase > nextCultivation.realmLevel) {
                  acquiredPills.push({
                      id: Date.now().toString() + 'h',
@@ -1935,30 +1970,33 @@ const Game = () => {
       let newWeighted = prevWeighted * bottleneckMultiplier + calculatedScore;
       
       // Apply Foundation Pill Protection
-      // Check if Foundation Pill was used effectively
-      // Determine if used pill provided Real or Virtual protection
-      let protectionType: 'none' | 'real' | 'virtual' = 'none';
-      if (usedPill && usedPill.type === 'foundation') {
-          // Re-verify validity context
-          const userSubRealm = Math.floor((nextCultivation.stage - 1) / 2);
-          if (usedPill.realm > nextCultivation.realmLevel) {
-              protectionType = 'real';
-          } else if (usedPill.realm === nextCultivation.realmLevel && (usedPill.subRealm ?? -1) >= userSubRealm) {
-              protectionType = usedPill.grade === 'real' ? 'real' : 'virtual';
-          }
-      }
-
-      if (newWeighted < prevWeighted) {
-          if (protectionType === 'real') {
+      if (newWeighted < prevWeighted && usedPill && usedPill.type === 'foundation') {
+          // 重新计算一次判定，确保逻辑一致
+          const userSubRealm = Math.floor((stage - 1) / 2);
+          const userVal = realm * 10 + userSubRealm;
+          const pillVal = usedPill.realm * 10 + (usedPill.subRealm ?? 0);
+          
+          if (pillVal > userVal) {
+              // 高境界 -> 强制实品效果
               newWeighted = prevWeighted;
-              pillEffectLog += ' | 实品护基丹生效：修为完全锁定';
-          } else if (protectionType === 'virtual') {
-              newWeighted = (prevWeighted + newWeighted) / 2;
-              pillEffectLog += ' | 虚品护基丹生效：修为倒退减缓';
+              pillEffectLog += ' | 阶位压制生效：修为完全锁定';
+          } else if (pillVal === userVal) {
+              if (usedPill.grade === 'real') {
+                  newWeighted = prevWeighted;
+                  pillEffectLog += ' | 实品药效：修为完全锁定';
+              } else {
+                  // 虚品
+                  newWeighted = (prevWeighted + newWeighted) / 2;
+                  pillEffectLog += ' | 虚品药效：修为倒退减缓';
+              }
           }
+      } else if (protectXP && newWeighted < prevWeighted) { 
+          // 兼容旧逻辑/其他情况（如果有）
+          newWeighted = prevWeighted;
       }
 
       nextCultivation.currentXP = newWeighted;
+      // ... 后续代码不变
       
       const target = getBreakthroughTarget(realm, stage);
       
@@ -2388,13 +2426,14 @@ const Game = () => {
   };
   
   // Sorted Inventory for Display (with Grouping)
+// Sorted Inventory for Display (with Grouping)
   const groupedInventory = useMemo(() => {
-      // 1. Group identical items
       const groups = new Map<string, StackedPill>();
       
       inventory.forEach(p => {
-          // Key excluding ID and Timestamp to find duplicates
-          const key = `${p.type}-${p.realm}-${p.subRealm ?? 'null'}-${p.grade}`;
+          // 修复：确保 subRealm 即使是 0 也被正确处理，undefined/null 转为特定字符串
+          const srKey = (p.subRealm !== undefined && p.subRealm !== null) ? p.subRealm : 'none';
+          const key = `${p.type}-${p.realm}-${srKey}-${p.grade}`;
           
           if (!groups.has(key)) {
               groups.set(key, { ...p, count: 0, ids: [] });
@@ -2407,31 +2446,23 @@ const Game = () => {
       
       const stackList = Array.from(groups.values());
       
-      // 2. Sort Logic
-      // Priority: Realm (Desc) > SubRealm (Desc) > Grade (Desc)
+      // 排序逻辑保持不变
       return stackList.sort((a, b) => {
-          // Realm High -> Low
           if (b.realm !== a.realm) return b.realm - a.realm;
           
-          // SubRealm check (Foundation/Focus) - Late(2) > Mid(1) > Early(0)
           const subA = a.subRealm ?? -1;
           const subB = b.subRealm ?? -1;
           if (subB !== subA) return subB - subA;
           
-          // Grade check
-          // Mapping grade to numeric value for sorting
           const getGradeVal = (g: PillGrade, type: PillType) => {
               if (type === 'focus') {
-                   // focus: high(优) > mid(良) > low(次)
                    if (g === 'high') return 3;
                    if (g === 'mid') return 2;
                    return 1;
               }
               if (type === 'foundation') {
-                  // foundation: real(实) > virtual(虚)
-                  return g === 'real' ? 2 : 1;
+                  return g === 'real' ? 2 : 1; // 实品 > 虚品
               }
-              // spirit: peak > high > mid > low
               const map: Record<string, number> = { low: 1, mid: 2, high: 3, peak: 4, human: 5, earth: 6, heaven: 7 };
               return map[g] || 0;
           };
@@ -2448,7 +2479,7 @@ const Game = () => {
   };
 
   // Helper to preview pill effect
-  const getPillEffectPreview = (pill: Pill) => {
+const getPillEffectPreview = (pill: Pill) => {
       if (!pill) return '';
       
       const userRealm = cultivation.realmLevel;
@@ -2456,7 +2487,6 @@ const Game = () => {
       
       if (pill.type === 'spirit') {
           if ([0, 2, 4, 6].includes(userStage)) {
-             // C values: Pre=1, Mid=2, Late=4, Perf=6, G.Perf=8
              const C_VALUES = [1, 2, 4, 6, 8];
              const C = C_VALUES[pill.subRealm ?? 0] || 1;
              
@@ -2475,34 +2505,26 @@ const Game = () => {
       if (pill.type === 'focus') {
           if (![1, 3, 5].includes(userStage)) return "❌ 无效：当前不处于小境界瓶颈期。";
           
-          // New Logic: Linear Step Comparison
-          // Map User Stage to SubRealm Index (0,1,2)
           const userSubIdx = Math.floor((userStage - 1) / 2);
           const userLinear = userRealm * 3 + userSubIdx;
-          
           const pillSubIdx = pill.subRealm ?? 0;
           const pillLinear = pill.realm * 3 + pillSubIdx;
-          
           const diff = pillLinear - userLinear;
           
-          // Base Grade Value: Low=0, Mid=1, High=2
           let baseGradeVal = 0;
           if (pill.grade === 'mid') baseGradeVal = 1;
           if (pill.grade === 'high') baseGradeVal = 2;
           
-          // Result Grade Value
           let resultGradeVal = baseGradeVal + diff;
-          
           let displayStatus = "";
+          
           if (diff > 0) displayStatus = `✨ 药效提升 (+${diff}阶)`;
           else if (diff < 0) displayStatus = `⚠️ 药效衰减 (${diff}阶)`;
           else displayStatus = "✅ 标准药效";
           
           if (resultGradeVal < 0) return `❌ 无效：${displayStatus}，药力已散。`;
           
-          // Cap at High (2)
           resultGradeVal = Math.min(2, resultGradeVal);
-          
           const finalRate = resultGradeVal === 2 ? 100 : resultGradeVal === 1 ? 85 : 75;
           const finalGradeStr = resultGradeVal === 2 ? '优品' : resultGradeVal === 1 ? '良品' : '次品';
           
@@ -2513,16 +2535,16 @@ const Game = () => {
           if (![1, 3, 5].includes(userStage)) return "❌ 无效：当前不处于瓶颈期。";
           const userSub = Math.floor((userStage - 1)/2);
           
-          // Determining effect type
-          let effectType = 'none';
-          if (pill.realm > userRealm) {
-              effectType = 'real'; // Always real if realm > user
-          } else if (pill.realm === userRealm && (pill.subRealm ?? 0) >= userSub) {
-              effectType = pill.grade === 'real' ? 'real' : 'virtual';
+          // 线性数值比较 (大境界*10 + 小境界) 简单粗暴
+          const userVal = userRealm * 10 + userSub;
+          const pillVal = pill.realm * 10 + (pill.subRealm ?? 0);
+
+          if (pillVal > userVal) {
+              return `✨ 完美药效：丹药阶位高于自身，虚品亦化为实品，完全锁定分数。`;
+          } else if (pillVal === userVal) {
+              if (pill.grade === 'real') return "✅ 生效：实品护基，完全锁定分数不倒退。";
+              else return "✅ 生效：虚品护基，取 (原分+新分)/2 减缓倒退。";
           }
-          
-          if (effectType === 'real') return "✅ 生效：实品护基 (阶位压制或本品)，完全锁定分数不倒退。";
-          if (effectType === 'virtual') return "✅ 生效：虚品护基，取 (原分+新分)/2 减缓倒退。";
           
           return "❌ 无效：丹药境界/阶位不足。";
       }
