@@ -807,7 +807,7 @@ function getPillName(pill: Pill): string {
       else if (pill.grade === 'high') gradeName = '优品';
       else gradeName = '次品'; 
   } else if (pill.type === 'foundation') {
-      // 修复：明确区分实品和虚品，旧数据默认视为虚品，避免错误的“实品”显示
+      // 修复：明确区分实品和虚品
       if (pill.grade === 'real') gradeName = '实品';
       else gradeName = '虚品'; 
   } else {
@@ -823,39 +823,42 @@ function getPillName(pill: Pill): string {
       }
   }
 
+  // 命名格式修正：
+  // 如果有小境界(subName不为空)，则不加"期"，例如 "元婴中期"
+  // 如果无小境界，则加"期"，例如 "元婴期"
+  const realmPart = subName ? realmName : `${realmName}期`;
+
   if (pill.type === 'heavenly') {
-      return `${realmName}期·${gradeName}通天渡厄丹`;
+      return `${realmPart}·${gradeName}通天渡厄丹`;
   } else {
       const pName = pill.type === 'spirit' ? '灵元丹' : pill.type === 'focus' ? '凝神丹' : '护基丹';
-      return `${realmName}期${subName}·${gradeName}${pName}`;
+      return `${realmPart}${subName}·${gradeName}${pName}`;
   }
 }
 
 function getPillDescription(pill: Pill): string {
   if (pill.type === 'spirit') {
-    // C值: Early=1, Mid=2, Late=4, Perf=6, G.Perf=8
     const C_VALUES = [1, 2, 4, 6, 8];
     const C = C_VALUES[pill.subRealm ?? 0] || 1;
-    
     let mult = 0, capBase = 0;
     if (pill.grade === 'low') { mult=1.5; capBase=0.5; }
     else if (pill.grade === 'mid') { mult=2; capBase=1; }
     else if (pill.grade === 'high') { mult=3; capBase=2; }
     else if (pill.grade === 'peak') { mult=5; capBase=4; }
-    
-    return `增加经验获取 ${mult}倍，额外上限 ${C}*${capBase}*10^N (仅积累期有效)`;
+    return `增加经验获取 ${mult}倍，额外上限 ${C}*${capBase}*10^N。`;
   }
   if (pill.type === 'focus') {
     let effect = '';
     if (pill.grade === 'low') effect = '转化率 75%';
     else if (pill.grade === 'mid') effect = '转化率 85%';
     else if (pill.grade === 'high') effect = '转化率 100%';
-    return `小境界冲关辅助。${effect}。若你的境界低于丹药，药效可能升华。`;
+    return `小境界冲关辅助。${effect}。若境界低于丹药，药效可升华。`;
   }
   if (pill.type === 'foundation') {
+    // 描述区分虚实
     const typeStr = pill.grade === 'virtual' ? '虚品' : '实品';
     const effectStr = pill.grade === 'virtual' ? '减缓倒退 (取平均值)' : '完全保底 (锁定分数)';
-    return `${typeStr}：冲关失败时${effectStr}。只能用于 >= 当前小境界。`;
+    return `${typeStr}：冲关失败时${effectStr}。高境界丹药可强制生效。`;
   }
   if (pill.type === 'heavenly') {
     let req = 0;
@@ -2431,8 +2434,8 @@ const Game = () => {
       const groups = new Map<string, StackedPill>();
       
       inventory.forEach(p => {
-          // 修复：确保 subRealm 即使是 0 也被正确处理，undefined/null 转为特定字符串
-          const srKey = (p.subRealm !== undefined && p.subRealm !== null) ? p.subRealm : 'none';
+          // 确保 Key 包含 subRealm 和 grade，防止不同品级混淆
+          const srKey = (p.subRealm !== undefined && p.subRealm !== null) ? p.subRealm : 'n';
           const key = `${p.type}-${p.realm}-${srKey}-${p.grade}`;
           
           if (!groups.has(key)) {
@@ -2446,7 +2449,7 @@ const Game = () => {
       
       const stackList = Array.from(groups.values());
       
-      // 排序逻辑保持不变
+      // 排序：境界高->低 > 小境界高->低 > 品级高->低
       return stackList.sort((a, b) => {
           if (b.realm !== a.realm) return b.realm - a.realm;
           
@@ -2461,7 +2464,7 @@ const Game = () => {
                    return 1;
               }
               if (type === 'foundation') {
-                  return g === 'real' ? 2 : 1; // 实品 > 虚品
+                  return g === 'real' ? 2 : 1; // 实品排在虚品前面
               }
               const map: Record<string, number> = { low: 1, mid: 2, high: 3, peak: 4, human: 5, earth: 6, heaven: 7 };
               return map[g] || 0;
@@ -2535,13 +2538,14 @@ const getPillEffectPreview = (pill: Pill) => {
           if (![1, 3, 5].includes(userStage)) return "❌ 无效：当前不处于瓶颈期。";
           const userSub = Math.floor((userStage - 1)/2);
           
-          // 线性数值比较 (大境界*10 + 小境界) 简单粗暴
+          // 比较逻辑：大境界*10 + 小境界
           const userVal = userRealm * 10 + userSub;
           const pillVal = pill.realm * 10 + (pill.subRealm ?? 0);
 
           if (pillVal > userVal) {
               return `✨ 完美药效：丹药阶位高于自身，虚品亦化为实品，完全锁定分数。`;
           } else if (pillVal === userVal) {
+              // 同阶位，看品级
               if (pill.grade === 'real') return "✅ 生效：实品护基，完全锁定分数不倒退。";
               else return "✅ 生效：虚品护基，取 (原分+新分)/2 减缓倒退。";
           }
