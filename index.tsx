@@ -1159,7 +1159,7 @@ const HistoryDayGroup: React.FC<HistoryDayGroupProps> = ({
                                         {bScore !== undefined && (
                                             <div style={{textAlign: 'right'}}>
                                                 <div style={{fontWeight: 700, color: '#ea580c', fontSize: '1.05rem'}}>
-                                                    +{formatScore(bScore)}
+                                                    +{formatScore(bScore)} 经验
                                                 </div>
                                                 {bnScore > 0 && (
                                                     <div style={{fontSize: '0.75rem', color: '#f59e0b', marginTop: 2}}>
@@ -1735,9 +1735,7 @@ const Game = () => {
   const saveResults = () => {
 // 新增这一行：获取实际进行的轮数
     const finalTrials = Math.max(0, currentIndexRef.current);
-    if (finalTrials === 0) {
-        return; 
-    }
+
 // 耗时严格按照：设置的时间间隔 * 实际进行的轮数
     const sessionTime = finalTrials * interval;
     const vScore = scoreRef.current.visual;
