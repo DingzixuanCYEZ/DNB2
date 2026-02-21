@@ -14,13 +14,21 @@ const DEFAULT_DISPLAY_TIME = 0.5;
 const REALMS = ['', '锻体', '炼气', '筑基', '结丹', '元婴', '化神', '炼虚', '合体', '大乘', '渡劫'];
 const STAGES = ['前期', '前期巅峰', '中期', '中期巅峰', '后期', '后期巅峰', '圆满', '大圆满'];
 
-// 丹药相关常量
-type PillType = 'spirit' | 'focus' | 'foundation' | 'heavenly';
-// virtual(虚品) 和 real(实品) 为护基丹专用
-type PillGrade = 'low' | 'mid' | 'high' | 'peak' | 'human' | 'earth' | 'heaven' | 'virtual' | 'real';
+// 丹药类型
+type PillType = 'spirit' | 'focus' | 'foundation' | 'heavenly' | 'preservation';
 
-// 0:前期, 1:中期, 2:后期, 3:圆满, 4:大圆满
-type SubRealm = 0 | 1 | 2 | 3 | 4; 
+// 丹药品级
+// low/mid/high/peak: 灵元丹
+// virtual/real: 凝神丹、护基丹 (虚/实)
+// unique/rare/fine/finished/defective: 保元丹 (孤/珍/精/成/次)
+// human/earth/heaven: 通天
+type PillGrade = 'low' | 'mid' | 'high' | 'peak' 
+               | 'human' | 'earth' | 'heaven' 
+               | 'virtual' | 'real'
+               | 'unique' | 'rare' | 'fine' | 'finished' | 'defective';
+
+// 0:前期, 1:中期, 2:后期 3:圆满 4:大圆满
+type SubRealm = 0 | 1 | 2 | 3 | 4;
 
 interface Pill {
   id: string;
@@ -63,12 +71,16 @@ interface GameResult {
   timestamp: number;
   n: number;
   interval: number;
+  avgInterval?: number; // 实际平均间隔
+  sessionDuration?: number; // 总耗时
   totalTrials: number;
   audioScore: ScoreDetail;
   visualScore: ScoreDetail;
   isVariable: boolean;
   variableDifficulty?: number; 
-  score?: number; 
+  score?: number; // 最终总分 (原分数+加成)
+  baseScore?: number; // 原分数 (无加成)
+  bonusScore?: number; // 加成部分
   accuracy: number; // 0-100
   device?: 'mobile' | 'desktop';
   realmLevel?: number; // Snapshot of realm when game started
@@ -81,6 +93,7 @@ interface GameResult {
   pillUsed?: Pill;
   pillEffectLog?: string;
   pillAcquired?: Pill[];
+  acquireLogs?: string[]; // 记录掉落判定的文字描述
 }
 
 interface CultivationState {
@@ -236,7 +249,6 @@ const styles = `
       max-height: 90vh;
       overflow-y: auto;
     }
-    /* Hide during play in landscape */
     .game-playing .header, .game-playing .cultivation-card, .game-playing .settings-container {
         display: none !important;
     }
@@ -795,21 +807,17 @@ const styles = `
 function getPillName(pill: Pill): string {
   const realmName = REALMS[pill.realm] || '未知';
   let subName = '';
-  if (pill.subRealm !== undefined && pill.type !== 'spirit' && pill.type !== 'heavenly') {
+  if (pill.subRealm !== undefined && pill.type !== 'heavenly') {
     const subNames = ['前期', '中期', '后期', '圆满', '大圆满'];
     subName = subNames[pill.subRealm] || '';
   }
 
   let gradeName = '';
-  if (pill.type === 'focus') {
-      if (pill.grade === 'low') gradeName = '次品';
-      else if (pill.grade === 'mid') gradeName = '良品';
-      else if (pill.grade === 'high') gradeName = '优品';
-      else gradeName = '次品'; 
-  } else if (pill.type === 'foundation') {
-      // 修复：明确区分实品和虚品
-      if (pill.grade === 'real') gradeName = '实品';
-      else gradeName = '虚品'; 
+  if (pill.type === 'focus' || pill.type === 'foundation') {
+      gradeName = pill.grade === 'real' ? '实品' : '虚品';
+  } else if (pill.type === 'preservation') {
+      const pGrades: Record<string, string> = { unique: '孤品', rare: '珍品', fine: '精品', finished: '成品', defective: '次品' };
+      gradeName = pGrades[pill.grade] || '次品';
   } else {
       switch(pill.grade) {
         case 'low': gradeName = '下品'; break;
@@ -830,6 +838,8 @@ function getPillName(pill: Pill): string {
 
   if (pill.type === 'heavenly') {
       return `${realmPart}·${gradeName}通天渡厄丹`;
+  } else if (pill.type === 'preservation') {
+      return `${realmPart}·${gradeName}保元丹`;
   } else {
       const pName = pill.type === 'spirit' ? '灵元丹' : pill.type === 'focus' ? '凝神丹' : '护基丹';
       return `${realmPart}${subName}·${gradeName}${pName}`;
@@ -848,24 +858,18 @@ function getPillDescription(pill: Pill): string {
     return `增加经验获取 ${mult}倍，额外上限 ${C}*${capBase}*10^N。`;
   }
   if (pill.type === 'focus') {
-    let effect = '';
-    if (pill.grade === 'low') effect = '转化率 75%';
-    else if (pill.grade === 'mid') effect = '转化率 85%';
-    else if (pill.grade === 'high') effect = '转化率 100%';
-    return `小境界冲关辅助。${effect}。若境界低于丹药，药效可升华。`;
+    return `小境界冲关辅助。提升转化率 (72%~100%)。丹药境界需匹配瓶颈。`;
   }
   if (pill.type === 'foundation') {
-    // 描述区分虚实
-    const typeStr = pill.grade === 'virtual' ? '虚品' : '实品';
-    const effectStr = pill.grade === 'virtual' ? '减缓倒退 (取平均值)' : '完全保底 (锁定分数)';
-    return `${typeStr}：冲关失败时${effectStr}。高境界丹药可强制生效。`;
+    return `减缓或阻止冲关失败时的修为倒退。丹药境界需匹配。`;
+  }
+  if (pill.type === 'preservation') {
+      const bases = { unique: 16, rare: 22, fine: 30, finished: 40, defective: 52 };
+      const base = bases[pill.grade as keyof typeof bases] || 64;
+      return `改变得分算法底数为 ${base} (原64)，降低失误惩罚。仅对低于等于自身大境界(N≤${pill.realm})的难度生效。`;
   }
   if (pill.type === 'heavenly') {
-    let req = 0;
-    if (pill.grade === 'human') req=75;
-    else if (pill.grade === 'earth') req=70;
-    else if (pill.grade === 'heaven') req=65;
-    return `大境界渡劫神物。将准确率要求降低至 ${req}%。`;
+    return `大境界渡劫神物。降低准确率要求。`;
   }
   return '';
 }
@@ -992,33 +996,73 @@ function getRoundCount(nVal: number, mode: RoundMode, custom: number) {
 
 // Cultivation Logic
 
-function getMaxXP(realm: number, stage: number): number {
-  const base = Math.max(1, Math.sqrt(realm));
-  const power = Math.pow(10, realm);
-  
-  // Early (0) -> Peak
-  if (stage === 0) return Math.round(base * 4 * power);
-  // Mid (2) -> Peak
-  if (stage === 2) return Math.round(base * 8 * power);
-  // Late (4) -> Peak
-  if (stage === 4) return Math.round(base * 16 * power);
-  // Perfect (6) -> Great Perfect. Max is Next Realm Early Cap.
-  if (stage === 6) {
-     const nextRealm = realm + 1;
-     const nextBase = Math.max(1, Math.sqrt(nextRealm));
-     const nextPower = Math.pow(10, nextRealm);
-     return Math.round(nextBase * 4 * nextPower); 
-  }
-  
-  return 100; // Fallback
+// 辅助计算积累期经验常数 (带根号)
+function getAccumulationMax(realm: number, subRealm: SubRealm): number {
+    const n = Math.max(1, realm); // 防止 realm=0 出错，虽然后面有保护
+    const sqrtN = Math.sqrt(n);
+    const power = Math.pow(10, n);
+    
+    let c = 4; // 前期
+    if (subRealm === 1) c = 8; // 中期
+    if (subRealm === 2) c = 16; // 后期
+    
+    // 公式: C * sqrt(n) * 10^n
+    return Math.round(c * sqrtN * power);
 }
 
+// 获取当前阶段的最大经验值 (用于进度条分母)
+function getMaxXP(realm: number, stage: number): number {
+  if (stage === 0) return getAccumulationMax(realm, 0); // 前期积累
+  if (stage === 2) return getAccumulationMax(realm, 1); // 中期积累
+  if (stage === 4) return getAccumulationMax(realm, 2); // 后期积累
+  if (stage === 6) {
+     // 圆满 -> 下一大境界，按下一境界的前期标准算，或者按当前圆满算(C=4*sqrt(next)*10^next)
+     // 通常圆满是为了突破大境界，这里沿用下一境界前期标准作为“圆满”的积累量
+     const nextRealm = realm + 1;
+     return Math.round(4 * Math.sqrt(nextRealm) * Math.pow(10, nextRealm)); 
+  }
+  return 100;
+}
+
+// 获取瓶颈突破目标 (不带根号，严格按 1, 2, 4 倍率)
 function getBreakthroughTarget(realm: number, stage: number): number {
   const power = Math.pow(10, realm);
-  if (stage === 1) return 1 * power; // Early Peak -> Mid
-  if (stage === 3) return 2 * power; // Mid Peak -> Late
-  if (stage === 5) return 4 * power; // Late Peak -> Perfect
+  if (stage === 1) return 1 * power; // 前期巅峰 -> 中期
+  if (stage === 3) return 2 * power; // 中期巅峰 -> 后期
+  if (stage === 5) return 4 * power; // 后期巅峰 -> 圆满
   return 0;
+}
+
+// 辅助函数：用于丹药掉落判定 (复用上述逻辑)
+// isReal 参数用于区分实品/虚品丹药倍率
+function getExpConstant(realm: number, subRealm: SubRealm, isReal: boolean): number {
+    // 这里的逻辑主要用于“丹药掉落判定”，通常参考的是“积累期”的量级，还是“突破期”的量级？
+    // 根据你的描述，护基丹/凝神丹是参考“经验常数”。
+    // 这里我们统一使用“积累期”的公式作为基准值（因为它更大，更难），或者使用你之前定义的虚品基准。
+    // 如果要严格对应“瓶颈突破需要”，则应该用 getBreakthroughTarget 的逻辑。
+    // 但鉴于丹药逻辑里有 *1.4, *1.5625 的实品设定，这里保留一个通用的计算器：
+    
+    // 采用积累期公式作为丹药价值基准 (C * sqrt(n) * 10^n)
+    // 虚品系数
+    let c = 4; 
+    if (subRealm === 1) c = 8;
+    if (subRealm === 2) c = 16;
+    
+    const baseVal = c * Math.sqrt(realm) * Math.pow(10, realm);
+    
+    if (!isReal) return Math.round(baseVal); // 虚品
+    
+    // 实品倍率
+    if (subRealm === 0 || subRealm === 1) return Math.round(baseVal * 1.4);
+    if (subRealm === 2) return Math.round(baseVal * 1.5625);
+    
+    return Math.round(baseVal);
+}
+
+// New unified target getter matching the prompt's implied constants
+function getRealBreakthroughTarget(realm: number, sub: SubRealm): number {
+    // Reusing the getExpConstant(..., false) logic which aligns with "Virtual"
+    return getExpConstant(realm, sub, false);
 }
 
 function getFullStageName(realm: number, stage: number) {
@@ -1042,22 +1086,19 @@ const HistoryDayGroup: React.FC<HistoryDayGroupProps> = ({
     onToggle, 
     isExpanded 
 }) => {
-    const totalDuration = records.reduce((acc, r) => acc + (r.totalTrials * r.interval), 0);
-    
-    // Determine Realm Change
-    const sorted = [...records].sort((a, b) => a.timestamp - b.timestamp);
-    const startRecord = sorted[0];
-    const endRecord = sorted[sorted.length - 1];
+    // 修复：1045:18 错误，加上 [...records]
+    const totalDurationSecs = records.reduce((acc, r) => acc + (r.sessionDuration || r.totalTrials * r.interval), 0);
+    // 改为按时间倒序排列（最近的在最上面）
+    const sorted = [...records].sort((a, b) => b.timestamp - a.timestamp);
+    // 因为数组倒序了，所以一天的初始记录变成最后一个，最终记录变成第一个
+    const startRecord = sorted[sorted.length - 1];
+    const endRecord = sorted[0];
     
     let realmChangeText = "";
-    if (startRecord.realmLevel && endRecord.realmLevel && startRecord.stage !== undefined && endRecord.stage !== undefined) {
-        // Start is always state BEFORE the first game
+    if (startRecord && endRecord && startRecord.realmLevel && endRecord.realmLevel && startRecord.stage !== undefined && endRecord.stage !== undefined) {
         const startName = getFullStageName(startRecord.realmLevel, startRecord.stage);
-        
-        // End is state AFTER the last game if available, otherwise fallback to BEFORE (legacy data)
         const endRealm = endRecord.afterRealmLevel ?? endRecord.realmLevel ?? 0;
         const endStage = endRecord.afterStage ?? endRecord.stage ?? 0;
-        
         const endName = getFullStageName(endRealm, endStage);
         
         if (startName !== endName) {
@@ -1077,7 +1118,7 @@ const HistoryDayGroup: React.FC<HistoryDayGroupProps> = ({
                         <Calendar size={14} /> {dateStr}
                     </div>
                     <div style={{fontSize: '0.8rem', color: '#64748b'}}>
-                        时长: {formatDuration(totalDuration)} | {realmChangeText}
+                        时长: {formatDuration(totalDurationSecs)} | {realmChangeText}
                     </div>
                 </div>
                 {isExpanded ? <ChevronDown size={20} color="#94a3b8" /> : <ChevronRight size={20} color="#94a3b8" />}
@@ -1085,38 +1126,61 @@ const HistoryDayGroup: React.FC<HistoryDayGroupProps> = ({
             {isExpanded && (
                 <div className="day-content">
                     <div style={{display: 'flex', flexDirection: 'column', gap: 10}}>
-                        {records.map(run => (
-                            <div key={run.id} style={{padding: 12, border: '1px solid #e2e8f0', borderRadius: 10, background: '#f8fafc'}}>
-                                <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: 6}}>
-                                    <span style={{fontWeight: 700, color: '#0f172a'}}>
-                                    {run.isVariable ? `Var N (${run.variableDifficulty})` : `N = ${run.n}`}
-                                    </span>
-                                    <span style={{fontSize: '0.75rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: 6}}>
-                                    {run.device === 'mobile' ? '手机' : '电脑'} | {formatDateTime(run.timestamp)}
-                                    </span>
-                                </div>
-                                <div style={{marginBottom: 8}}>
-                                    <StatsTable visual={run.visualScore} audio={run.audioScore} />
-                                </div>
-                                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                                   {run.pillUsed && (
-                                     <span style={{fontSize: '0.75rem', color: '#7c3aed', background: '#f5f3ff', padding: '2px 6px', borderRadius: 4}}>
-                                       服: {getPillName(run.pillUsed)}
-                                     </span>
-                                   )}
-                                   {run.score !== undefined && (
-                                      <div style={{textAlign: 'right', fontWeight: 700, color: '#ea580c', fontSize: '0.9rem', marginLeft: 'auto'}}>
-                                      +{formatScore(run.score)} 经验
-                                      </div>
-                                   )}
-                                </div>
-                                {run.pillAcquired && run.pillAcquired.length > 0 && (
-                                    <div style={{marginTop: 6, fontSize: '0.8rem', color: '#16a34a'}}>
-                                        获得: {run.pillAcquired.map(p => getPillName(p)).join(', ')}
+                        {sorted.map(run => {
+                            const bScore = run.baseScore !== undefined ? run.baseScore : run.score;
+                            const bnScore = run.bonusScore || 0;
+                            const timeStr = run.sessionDuration ? run.sessionDuration.toFixed(2) : ((run.totalTrials || 0) * (run.interval || 0)).toFixed(2);
+                            const intervalStr = run.interval.toFixed(2);
+
+                            return (
+                                <div key={run.id} style={{padding: 12, border: '1px solid #e2e8f0', borderRadius: 10, background: '#f8fafc'}}>
+                                    <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: 6}}>
+                                        <span style={{fontWeight: 700, color: '#0f172a'}}>
+                                        {run.isVariable ? `Var N (${run.variableDifficulty})` : `N = ${run.n}`}
+                                        </span>
+                                        <span style={{fontSize: '0.75rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: 6}}>
+                                        耗时: {timeStr}s ({run.totalTrials}次) | 间隔: {intervalStr}s | {formatDateTime(run.timestamp)}
+                                        </span>
                                     </div>
-                                )}
-                            </div>
-                        ))}
+                                    <div style={{marginBottom: 8}}>
+                                        <StatsTable visual={run.visualScore} audio={run.audioScore} />
+                                    </div>
+                                    <div style={{display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8}}>
+                                        {/* 消耗丹药及效果 */}
+                                        {run.pillUsed && (
+                                            <div style={{fontSize: '0.75rem', color: '#7c3aed', background: '#f5f3ff', padding: '4px 8px', borderRadius: 4}}>
+                                                <span style={{fontWeight: 'bold'}}>服用: {getPillName(run.pillUsed)}</span>
+                                                {run.pillEffectLog && <span style={{marginLeft: 6, opacity: 0.8}}>- {run.pillEffectLog}</span>}
+                                            </div>
+                                        )}
+                                        
+                                        {/* 分数分离显示 */}
+                                        {/* 历史记录：红字大显原分数，下方橘色小字标加成 */}
+                                        {bScore !== undefined && (
+                                            <div style={{textAlign: 'right'}}>
+                                                <div style={{fontWeight: 700, color: '#ea580c', fontSize: '1.05rem'}}>
+                                                    +{formatScore(bScore)}
+                                                </div>
+                                                {bnScore > 0 && (
+                                                    <div style={{fontSize: '0.75rem', color: '#f59e0b', marginTop: 2}}>
+                                                        (+{formatScore(bnScore)} 丹药加成)
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                    {run.pillAcquired && run.pillAcquired.length > 0 && (
+                                        <div style={{marginTop: 6, fontSize: '0.75rem', color: '#059669', background: '#ecfdf5', padding: '6px 8px', borderRadius: 4}}>
+                                            <div style={{fontWeight: 'bold', marginBottom: 2}}>获得丹药: {run.pillAcquired.map(p => getPillName(p)).join(', ')}</div>
+                                            {/* 渲染获得原因 */}
+                                            {run.acquireLogs && run.acquireLogs.map((log, i) => (
+                                                <div key={i} style={{opacity: 0.85}}>• {log}</div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
                     </div>
                 </div>
             )}
@@ -1381,7 +1445,22 @@ const Game = () => {
   const inputsRef = useRef({ audio: false, visual: false });
   const prevTrialInputsRef = useRef({ audio: false, visual: false });
   const currentTrialStartTimeRef = useRef<number>(0);
+  // 【新增/修改】在这里添加这两个 Ref 定义
+  const sequenceRef = useRef<GameStep[]>([]); 
+  
+  // 这是一个包含所有关键状态的 Ref，确保 saveResults 能读到最新数据
+  const latestStateRef = useRef({
+      n, interval, isVariable, variableWeights, pacingMode, 
+      cultivation, inventory, gachaState, milestones, history, selectedPillId
+  });
 
+  // 【新增】使用 Effect 实时更新 latestStateRef
+  useEffect(() => {
+      latestStateRef.current = {
+          n, interval, isVariable, variableWeights, pacingMode, 
+          cultivation, inventory, gachaState, milestones, history, selectedPillId
+      };
+  });
   // --- Effects for Auto-Saving ---
   
   // Save Settings
@@ -1556,7 +1635,10 @@ const Game = () => {
     const currentWeights = variableWeights.length === n ? variableWeights : new Array(n).fill(10);
     
     const newSeq = generateSequence(trials, n, useCenter, isVariable, currentWeights);
+    
     setSequence(newSeq);
+    sequenceRef.current = newSeq; // 【关键修改】必须加这一行！将序列存入 Ref
+    
     setCurrentIndex(-1);
     currentIndexRef.current = -1;
     setIsPlaying(true);
@@ -1572,7 +1654,7 @@ const Game = () => {
     };
 
     // Delay start by 2000ms
-    setTimeout(() => nextTrial(0, newSeq), 2000);
+    timerRef.current = window.setTimeout(() => nextTrial(0, newSeq), 2000);
   };
 
   const stopGame = () => {
@@ -1580,6 +1662,8 @@ const Game = () => {
     setIsPlaying(false);
     setActivePos(null);
     setCurrentNumberDisplay(null);
+    // 新增下面这一行：立即切断可能正在播放的语音播报
+    window.speechSynthesis.cancel(); 
   };
 
   const calculateVariableDifficulty = () => {
@@ -1593,7 +1677,69 @@ const Game = () => {
     return parseFloat((weightedSum / totalW).toFixed(2));
   };
 
+  const finalizeResults = (
+      nextCultivation: CultivationState, 
+      newMilestonesList: Milestone[], 
+      calculatedScore: number, 
+      originalScore: number,
+      bonusScore: number,
+      totalAccVal: number,
+      difficulty: number,
+      sessionTime: number,
+      finalTrials: number, // 【新增参数】
+      usedPill?: Pill,
+      pillEffectLog?: string,
+      acquiredPills?: Pill[],
+      acquireLogs?: string[],
+      prevCultivation?: CultivationState
+  ) => {
+    const avgInt = finalTrials > 0 ? sessionTime / finalTrials : 0;
+    
+    // 从 Ref 读取最新的配置，防止闭包读取旧的 N 值
+    const { n, interval, isVariable, pacingMode } = latestStateRef.current;
+    const result: GameResult = {
+      id: Date.now().toString(),
+      timestamp: Date.now(),
+      n,
+      interval,
+      avgInterval: avgInt,
+      sessionDuration: sessionTime,
+      totalTrials: finalTrials,
+      audioScore: scoreRef.current.audio,
+      visualScore: scoreRef.current.visual,
+      isVariable,
+      variableDifficulty: difficulty,
+      score: calculatedScore,
+      baseScore: originalScore, 
+      bonusScore: bonusScore,
+      accuracy: totalAccVal,
+      device: getDeviceType(),
+      realmLevel: prevCultivation?.realmLevel || cultivation.realmLevel,
+      stage: prevCultivation?.stage || cultivation.stage,
+      afterRealmLevel: nextCultivation.realmLevel,
+      afterStage: nextCultivation.stage,
+      pacingMode,
+      pillUsed: usedPill,
+      pillEffectLog,
+      pillAcquired: acquiredPills,
+      acquireLogs: acquireLogs
+    };
+
+    setHistory(prev => [...prev, result]);
+    setCultivation(nextCultivation);
+    if (newMilestonesList.length > 0) setMilestones(prev => [...prev, ...newMilestonesList]);
+    setLastResult(result);
+    setShowSummary(true);
+  };
+
   const saveResults = () => {
+// 新增这一行：获取实际进行的轮数
+    const finalTrials = Math.max(0, currentIndexRef.current);
+    if (finalTrials === 0) {
+        return; 
+    }
+// 耗时严格按照：设置的时间间隔 * 实际进行的轮数
+    const sessionTime = finalTrials * interval;
     const vScore = scoreRef.current.visual;
     const aScore = scoreRef.current.audio;
     const totalHits = vScore.hits + aScore.hits;
@@ -1601,24 +1747,47 @@ const Game = () => {
     const totalFalse = vScore.falseAlarms + aScore.falseAlarms;
     const totalAccVal = calculateAccuracy(totalHits, totalMisses, totalFalse);
     const accFraction = totalAccVal / 100;
-
     const difficulty = isVariable ? calculateVariableDifficulty() : n;
     
-    // Base Score
-    const multiplier = (Math.pow(64, accFraction) - 1) / 63;
-    let calculatedScore = Math.pow(10, difficulty) * multiplier;
+    const usedPill = inventory.find(p => p.id === selectedPillId);
+    let pillEffectLog = '';
+    
+    // Calculate Scores (Preservation pill modifies base 64 formula)
+    let formulaBase = 64;
+    const n_floor = Math.floor(difficulty);
+    
+    if (usedPill && usedPill.type === 'preservation') {
+        if (n_floor <= usedPill.realm) {
+            const bases = { unique: 16, rare: 22, fine: 30, finished: 40, defective: 52 };
+            formulaBase = bases[usedPill.grade as keyof typeof bases] || 64;
+            pillEffectLog = `保元丹生效: 惩罚底数降至${formulaBase}`;
+        } else {
+            pillEffectLog = `保元丹无效: 训练难度超过丹药大境界`;
+        }
+    }
 
-    // --- Pill & Gacha Logic ---
+    // 真正的原分数（无任何丹药影响时的得分）
+    const pureOriginalScore = Math.pow(10, difficulty) * (Math.pow(64, accFraction) - 1) / 63;
+    // 使用保元丹后的分数（如果没吃保元丹，和纯原分数相同）
+    const preservedScore = Math.pow(10, difficulty) * (Math.pow(formulaBase, accFraction) - 1) / (formulaBase - 1);
+    
+    let calculatedScore = preservedScore;
+    let originalScoreForDisplay = pureOriginalScore; // The true "原分数"
+    let bonusScore = preservedScore - pureOriginalScore; // 此时 bonusScore 是由保元丹带来的额外分数
+
+    // --- Pill Consumption (Remove from Inventory) ---
+    if (usedPill) {
+        setInventory(prev => prev.filter(p => p.id !== selectedPillId));
+        setSelectedPillId(null);
+    }
+
+    const prevCultivation = { ...cultivation };
     const nextCultivation = { ...cultivation };
     const newMilestonesList: Milestone[] = [];
     const acquiredPills: Pill[] = [];
-    let pillEffectLog = '';
-
-    // Calculate REAL session duration for Gacha
-    const endTime = Date.now();
-    const sessionTime = (endTime - startTimeRef.current) / 1000;
+    const acquireLogs: string[] = [];
     
-    // Update Gacha State (every 10 mins = 600s)
+    // Gacha Accumulation
     const newGachaState = { ...gachaState };
     newGachaState.accumulatedTime += sessionTime;
     const addedDraws = Math.floor(newGachaState.accumulatedTime / 600);
@@ -1628,132 +1797,64 @@ const Game = () => {
     }
     setGachaState(newGachaState);
 
-    // Apply Selected Pill
-    const usedPill = inventory.find(p => p.id === selectedPillId);
-    let scoreMultiplier = 1;
     let bottleneckMultiplier = 2/3; // Default
-    let protectXP = false;
     let tribulationReqOffset = 0;
-    
+
+    // --- Process Pill Usage Modifiers ---
     if (usedPill) {
-        // Consumption logic: remove from inventory
-        setInventory(prev => prev.filter(p => p.id !== selectedPillId));
-        setSelectedPillId(null);
-        
-        // Spirit Pill Effect
         if (usedPill.type === 'spirit') {
-             // 1. Check if user is in Accumulation Phase (0, 2, 4, 6)
              if ([0, 2, 4, 6].includes(nextCultivation.stage)) {
-                 // C值逻辑: Pre=1, Mid=2, Late=4, Perf=6, G.Perf=8
                  const C_VALUES = [1, 2, 4, 6, 8];
                  const C = C_VALUES[usedPill.subRealm ?? 0] || 1;
                  
-                 let mult = 1; 
-                 let capBase = 0;
+                 let mult = 1, capBase = 0;
                  if (usedPill.grade === 'low') { mult = 1.5; capBase = 0.5; }
                  else if (usedPill.grade === 'mid') { mult = 2.0; capBase = 1.0; }
                  else if (usedPill.grade === 'high') { mult = 3.0; capBase = 2.0; }
                  else if (usedPill.grade === 'peak') { mult = 5.0; capBase = 4.0; }
                  
-                 // Cap is based on Pill Realm.
-                 let realCap = C * capBase * Math.pow(10, usedPill.realm);
-
-                 const rawExtra = calculatedScore * (mult - 1);
-                 const finalExtra = Math.min(rawExtra, realCap);
+                 const realCap = C * capBase * Math.pow(10, usedPill.realm);
+                 const rawExtra = pureOriginalScore * (mult - 1);
+                 const spiritBonus = Math.min(rawExtra, realCap);
                  
-                 calculatedScore += finalExtra;
-                 pillEffectLog = `灵元丹生效: 额外获得 ${formatScore(finalExtra)} 经验 (上限 ${formatScore(realCap)})`;
+                 bonusScore += spiritBonus;
+                 calculatedScore += spiritBonus;
+                 pillEffectLog = `灵元丹生效: 额外获得 ${formatScore(spiritBonus)} 经验`;
              } else {
-                 pillEffectLog = `灵元丹无效: 当前不在修炼积累期`;
+                 pillEffectLog = `灵元丹无效: 当前不在修为积累期`;
              }
         }
         
-        // Focus Pill Effect
         if (usedPill.type === 'focus') {
-             // Check if Bottleneck (1, 3, 5)
              if ([1, 3, 5].includes(nextCultivation.stage)) {
-                 // Dynamic Grade Logic
-                 // Map User Stage to SubRealm Index (0,1,2)
-                 const userSubIdx = Math.floor((nextCultivation.stage - 1) / 2);
-                 const userLinear = nextCultivation.realmLevel * 3 + userSubIdx;
+                 const userMinor = Math.floor((nextCultivation.stage - 1) / 2);
+                 const userLevel = nextCultivation.realmLevel * 6 + userMinor * 2 + 0; // 瓶颈视作虚品(0)
+                 const pillLevel = usedPill.realm * 6 + (usedPill.subRealm ?? 0) * 2 + (usedPill.grade === 'real' ? 1 : 0);
+                 const diff = pillLevel - userLevel;
                  
-                 const pillSubIdx = usedPill.subRealm ?? 0;
-                 const pillLinear = usedPill.realm * 3 + pillSubIdx;
-                 
-                 const diff = pillLinear - userLinear;
-                 
-                 // Base Grade Value: Low=0, Mid=1, High=2
-                 let baseGradeVal = 0;
-                 if (usedPill.grade === 'mid') baseGradeVal = 1;
-                 if (usedPill.grade === 'high') baseGradeVal = 2;
-                 
-                 // Result Grade Value
-                 let resultGradeVal = baseGradeVal + diff;
-                 
-                 // If diff implies downgrading below Low -> Invalid
-                 if (resultGradeVal < 0) {
-                     pillEffectLog = `凝神丹失效: 丹药阶位过低`;
+                 if (diff < 0) {
+                     pillEffectLog = `凝神丹无效: 丹药境界低于当前瓶颈`;
                      bottleneckMultiplier = 2/3;
                  } else {
-                     // Cap at High (2)
-                     resultGradeVal = Math.min(2, resultGradeVal);
+                     if (diff === 0) bottleneckMultiplier = 0.72;
+                     else if (diff === 1) bottleneckMultiplier = 0.78;
+                     else if (diff === 2) bottleneckMultiplier = 0.86;
+                     else if (diff === 3) bottleneckMultiplier = 0.96;
+                     else bottleneckMultiplier = 1.0;
                      
-                     // Apply multiplier
-                     if (resultGradeVal === 0) bottleneckMultiplier = 0.75;
-                     else if (resultGradeVal === 1) bottleneckMultiplier = 0.85;
-                     else if (resultGradeVal === 2) bottleneckMultiplier = 1.0;
-                     
-                     const gradeStr = resultGradeVal === 2 ? '优品' : resultGradeVal === 1 ? '良品' : '次品';
-                     pillEffectLog = `凝神丹(${gradeStr})生效: 转化率提升至 ${(bottleneckMultiplier*100).toFixed(0)}%`;
+                     pillEffectLog = `凝神丹生效: 转化率提升至 ${(bottleneckMultiplier*100).toFixed(0)}%`;
                  }
              } else {
                  pillEffectLog = `凝神丹无效: 当前不在瓶颈期`;
              }
         }
         
-        // Foundation Pill Effect
         if (usedPill.type === 'foundation') {
-            if ([1, 3, 5].includes(nextCultivation.stage)) {
-                const userSubRealm = Math.floor((nextCultivation.stage - 1) / 2);
-                
-                // 计算线性值进行比较
-                const userVal = nextCultivation.realmLevel * 10 + userSubRealm;
-                const pillVal = usedPill.realm * 10 + (usedPill.subRealm ?? 0);
-
-                if (pillVal >= userVal) {
-                    let effectiveType = 'virtual';
-                    
-                    // 逻辑：如果丹药 > 自身，或者是同级实品，则为实品效果
-                    if (pillVal > userVal) {
-                        effectiveType = 'real';
-                    } else if (pillVal === userVal && usedPill.grade === 'real') {
-                        effectiveType = 'real';
-                    }
-                    
-                    if (effectiveType === 'real') {
-                        protectXP = true; // 锁定逻辑
-                        pillEffectLog = `实品护基丹激活(含阶位压制): 若突破失败将锁定修为`;
-                        // 这是一个临时标记，告诉下面的逻辑它是实品保护
-                        // 我们用一个特殊的变量名来传递这个状态给下面计算分数的逻辑
-                        // 由于 protectXP 只是个 boolean，我们需要区分虚/实
-                        // 建议在 saveResults 作用域顶端定义 let foundationEffect = 'none'; // 'none', 'real', 'virtual'
-                    } else {
-                        // 虚品且同级
-                        protectXP = false; 
-                        // 这里需要传递虚品状态给下面的计算逻辑
-                        // 为了不破坏现有结构，我们利用 protectXP 变量含义的局限性
-                        // 建议修改下面的计算逻辑来读取 usedPill
-                        pillEffectLog = `虚品护基丹激活: 若突破失败将减缓修为倒退`;
-                    }
-                } else {
-                    pillEffectLog = `护基丹无效: 丹药境界不足`;
-                }
-            } else {
+            if (![1, 3, 5].includes(nextCultivation.stage)) {
                 pillEffectLog = `护基丹无效: 当前不在瓶颈期`;
             }
         }
         
-        // Heavenly Pill Effect
         if (usedPill.type === 'heavenly') {
              if (nextCultivation.stage === 6 || nextCultivation.stage === 7) {
                  if (usedPill.realm >= nextCultivation.realmLevel) {
@@ -1771,108 +1872,84 @@ const Game = () => {
     }
 
     // --- Pill Drop Logic ---
-    
-    // 1. Focus Pill (Variable Mode only)
-    if (isVariable && difficulty > 0) {
-        const realm = Math.floor(difficulty);
-        const dec = difficulty - realm;
-        let sub: SubRealm = 0;
-        if (dec >= 0.67) sub = 2; // Late
-        else if (dec >= 0.34) sub = 1; // Mid
+    const dropRealmBase = Math.floor(difficulty);
+    const names = ['前期','中期','后期'];
+
+    // 1. Focus Pill Drops (凝神丹 - Variable Mode only)
+    if (isVariable && dropRealmBase > 0) {
+        const levels = [
+            {sub: 2, isReal: true, val: getExpConstant(dropRealmBase, 2, true)},
+            {sub: 2, isReal: false, val: getExpConstant(dropRealmBase, 2, false)},
+            {sub: 1, isReal: true, val: getExpConstant(dropRealmBase, 1, true)},
+            {sub: 1, isReal: false, val: getExpConstant(dropRealmBase, 1, false)},
+            {sub: 0, isReal: true, val: getExpConstant(dropRealmBase, 0, true)},
+            {sub: 0, isReal: false, val: getExpConstant(dropRealmBase, 0, false)},
+        ];
         
-        let dropGrade: PillGrade | null = null;
-        if (totalAccVal === 100) dropGrade = 'high'; // 优品
-        else if (totalAccVal >= 90) dropGrade = 'mid'; // 良品
-        else if (totalAccVal >= 80) dropGrade = 'low'; // 次品
-        
-        if (dropGrade) {
-            acquiredPills.push({
-                id: Date.now().toString() + 'f',
-                type: 'focus',
-                realm: realm,
-                subRealm: sub,
-                grade: dropGrade,
-                timestamp: Date.now()
-            });
+        for (const l of levels) {
+            if (pureOriginalScore >= l.val / 3) {
+                if (dropRealmBase >= nextCultivation.realmLevel) {
+                    const g = l.isReal ? 'real' : 'virtual';
+                    acquiredPills.push({
+                        id: Date.now().toString() + 'f', type: 'focus', realm: dropRealmBase,
+                        subRealm: l.sub as SubRealm, grade: g, timestamp: Date.now()
+                    });
+                    acquireLogs.push(`原分数 ${pureOriginalScore.toFixed(0)} >= ${(l.val/3).toFixed(0)} (${REALMS[dropRealmBase]}${names[l.sub]}${g==='real'?'实品':'虚品'}要求 /3)，获得凝神丹`);
+                }
+                break; 
+            }
         }
     }
 
-// 2. Foundation Pill (护基丹掉落逻辑重构)
-    const dropRealmBase = Math.floor(difficulty);
+    // 2. Foundation Pill Drops (护基丹)
     if (dropRealmBase > 0) {
-         // 获取三个小境界瓶颈的目标分数
-         // index 0: 前期->中期 (对应 SubRealm 0)
-         // index 1: 中期->后期 (对应 SubRealm 1)
-         // index 2: 后期->圆满 (对应 SubRealm 2)
-         const targets = [
-             getBreakthroughTarget(dropRealmBase, 1),
-             getBreakthroughTarget(dropRealmBase, 3),
-             getBreakthroughTarget(dropRealmBase, 5)
+         const levels = [
+             {sub: 2, isReal: true, val: getExpConstant(dropRealmBase, 2, true)},
+             {sub: 2, isReal: false, val: getExpConstant(dropRealmBase, 2, false)},
+             {sub: 1, isReal: true, val: getExpConstant(dropRealmBase, 1, true)},
+             {sub: 1, isReal: false, val: getExpConstant(dropRealmBase, 1, false)},
+             {sub: 0, isReal: true, val: getExpConstant(dropRealmBase, 0, true)},
+             {sub: 0, isReal: false, val: getExpConstant(dropRealmBase, 0, false)},
          ];
          
-         // 计算当前用户的可比对 SubRealm (用于过滤)
-         const userRealm = nextCultivation.realmLevel;
-         let currentUserSub = 0;
-         if (nextCultivation.stage >= 6) currentUserSub = 3;
-         else if (nextCultivation.stage >= 4) currentUserSub = 2;
-         else if (nextCultivation.stage >= 2) currentUserSub = 1;
-         else currentUserSub = 0;
-
-         let foundPill = null;
-
-         // 从高到低遍历 (后期 -> 中期 -> 前期)，以获得“对应的最高境界”
-         for (let i = 2; i >= 0; i--) {
-             const target = targets[i];
-             if (target <= 0) continue; // 防御性检查
-
-             // 判定标准：
-             // 实品：分数 >= 瓶颈要求
-             // 虚品：分数 >= 瓶颈要求 * 0.6 (且 < 下一级的要求，但这里通过从高到低遍历解决)
-             
-             let grade: PillGrade | null = null;
-             
-             if (calculatedScore >= target) {
-                 grade = 'real';
-             } else if (calculatedScore >= target * 0.6) {
-                 grade = 'virtual';
-             }
-
-             if (grade) {
-                 // 命中区间，检查是否满足“境界高于自己”或“同境界但小境界>=自己”
-                 // 您的要求：境界 <= 自己就不要出现。这里特指大境界低于，或者同大境界且小境界低于的情况。
-                 
-                 let isUseful = false;
-                 if (dropRealmBase > userRealm) {
-                     isUseful = true;
-                 } else if (dropRealmBase === userRealm) {
-                     // i 是丹药的小境界 (0,1,2), currentUserSub 是用户的小境界
-                     if (i >= currentUserSub) {
-                         isUseful = true;
-                     }
+         for (const l of levels) {
+             if (pureOriginalScore >= l.val) {
+                 if (dropRealmBase >= nextCultivation.realmLevel) {
+                     const g = l.isReal ? 'real' : 'virtual';
+                     acquiredPills.push({
+                         id: Date.now().toString() + 'fd', type: 'foundation', realm: dropRealmBase,
+                         subRealm: l.sub as SubRealm, grade: g, timestamp: Date.now() + 1 
+                     });
+                     acquireLogs.push(`原分数 ${pureOriginalScore.toFixed(0)} >= ${l.val.toFixed(0)} (${REALMS[dropRealmBase]}${names[l.sub]}${g==='real'?'实品':'虚品'}要求)，获得护基丹`);
                  }
-
-                 if (isUseful) {
-                     foundPill = {
-                         sub: i as SubRealm,
-                         grade: grade
-                     };
-                     break; // 找到了最高境界符合条件的，停止遍历
-                 }
+                 break; 
              }
          }
-         
-         if (foundPill) {
-             acquiredPills.push({
-                 id: Date.now().toString() + 'fd',
-                 type: 'foundation',
-                 realm: dropRealmBase,
-                 subRealm: foundPill.sub,
-                 grade: foundPill.grade, 
-                 timestamp: Date.now() + 1 
-             });
-         }
-    }    
-// 3. Heavenly Pill
+    }
+    
+    // 3. Preservation Pill (保元丹)
+    if (interval <= 2.5 && dropRealmBase > 0) {
+        const x = pureOriginalScore * (2.5 - interval) / Math.pow(10, difficulty);
+        let pGrade: PillGrade | null = null;
+        if (x >= 1) pGrade = 'unique';
+        else if (x >= 0.8) pGrade = 'rare';
+        else if (x >= 0.6) pGrade = 'fine';
+        else if (x >= 0.4) pGrade = 'finished';
+        else if (x >= 0.25) pGrade = 'defective';
+        
+        if (pGrade) {
+            acquiredPills.push({
+                id: Date.now().toString() + 'p',
+                type: 'preservation',
+                realm: dropRealmBase,
+                grade: pGrade,
+                timestamp: Date.now() + 3
+            });
+            acquireLogs.push(`保元系数 x=${x.toFixed(2)}，获得保元丹`);
+        }
+    }
+
+    // 4. Heavenly Pill (通天渡厄丹)
     if (dropRealmBase > 0) {
         let hGrade: PillGrade | null = null;
         if (totalAccVal === 100) hGrade = 'heaven';
@@ -1880,7 +1957,6 @@ const Game = () => {
         else if (totalAccVal >= 80) hGrade = 'human';
         
         if (hGrade) {
-             // 严格检查：只有当 掉落境界 > 自身境界 时才获得
              if (dropRealmBase > nextCultivation.realmLevel) {
                  acquiredPills.push({
                      id: Date.now().toString() + 'h',
@@ -1893,17 +1969,15 @@ const Game = () => {
         }
     }
     
-    // Add acquired pills to inventory
     if (acquiredPills.length > 0) {
         setInventory(prev => [...prev, ...acquiredPills]);
     }
 
     // --- Update Cultivation ---
-    
     nextCultivation.totalStudyTime += sessionTime;
     nextCultivation.stageStudyTime += sessionTime;
-    nextCultivation.totalSessions = (nextCultivation.totalSessions || 0) + 1;
-    nextCultivation.stageSessions = (nextCultivation.stageSessions || 0) + 1;
+    nextCultivation.totalSessions += 1;
+    nextCultivation.stageSessions += 1;
 
     const realm = nextCultivation.realmLevel;
     const stage = nextCultivation.stage;
@@ -1936,13 +2010,13 @@ const Game = () => {
              nextCultivation.stageStudyTime = 0;
              nextCultivation.stageSessions = 0;
              
-             finalizeResults(nextCultivation, newMilestonesList, calculatedScore, totalAccVal, difficulty, usedPill, pillEffectLog, acquiredPills);
+             finalizeResults(nextCultivation, newMilestonesList, calculatedScore, originalScoreForDisplay, bonusScore, totalAccVal, difficulty, sessionTime, finalTrials, usedPill, pillEffectLog, acquiredPills, acquireLogs, prevCultivation);
              return;
         }
     }
 
     // Normal Progression
-    if (stage === 0 || stage === 2 || stage === 4) {
+    if (stage === 0 || stage === 2 || stage === 4 || stage === 6) {
       // Accumulation Stages
       nextCultivation.currentXP += calculatedScore;
       const maxXP = getMaxXP(realm, stage);
@@ -1952,18 +2026,24 @@ const Game = () => {
           id: Date.now().toString(),
           timestamp: Date.now(),
           type: 'peak',
-          title: `到达${REALMS[realm]}${STAGES[stage]}巅峰`,
-          description: `修为积累圆满 (需达到 ${formatScore(maxXP)} 经验)。`,
+          title: `到达${REALMS[realm]}${stage === 6 ? '大圆满' : STAGES[stage]+'巅峰'}`,
+          // 【修改点】下面这行增加了具体的数值显示
+          description: `修为积累圆满 (需达到 ${formatScore(maxXP)} 经验)。即将面临突破瓶颈。`,
           stageDuration: nextCultivation.stageStudyTime,
           totalDuration: nextCultivation.totalStudyTime,
           stageSessions: nextCultivation.stageSessions,
           totalSessions: nextCultivation.totalSessions
         });
-
-        nextCultivation.stage += 1; 
-        nextCultivation.currentXP = 0;
+        
+        if (stage === 6) {
+            nextCultivation.currentXP = maxXP; 
+            nextCultivation.stage = 7; 
+        } else {
+            nextCultivation.stage += 1; 
+            nextCultivation.currentXP = 0;
+        }
         nextCultivation.recentScores = []; 
-        nextCultivation.stageStudyTime = 0;
+        nextCultivation.stageStudyTime = 0; 
         nextCultivation.stageSessions = 0;
       }
     } else if (stage === 1 || stage === 3 || stage === 5) {
@@ -1972,137 +2052,54 @@ const Game = () => {
       // Apply Focus Pill Multiplier
       let newWeighted = prevWeighted * bottleneckMultiplier + calculatedScore;
       
-      // Apply Foundation Pill Protection
+      // Apply Foundation Pill Protection Logic
       if (newWeighted < prevWeighted && usedPill && usedPill.type === 'foundation') {
-          // 重新计算一次判定，确保逻辑一致
-          const userSubRealm = Math.floor((stage - 1) / 2);
-          const userVal = realm * 10 + userSubRealm;
-          const pillVal = usedPill.realm * 10 + (usedPill.subRealm ?? 0);
+          const userMinor = Math.floor((stage - 1) / 2);
+          const userLevel = realm * 6 + userMinor * 2 + 0; // 瓶颈视作虚品(0)
+          const pillLevel = usedPill.realm * 6 + (usedPill.subRealm ?? 0) * 2 + (usedPill.grade === 'real' ? 1 : 0);
+          const diff = pillLevel - userLevel;
           
-          if (pillVal > userVal) {
-              // 高境界 -> 强制实品效果
+          if (diff >= 1) {
               newWeighted = prevWeighted;
-              pillEffectLog += ' | 阶位压制生效：修为完全锁定';
-          } else if (pillVal === userVal) {
-              if (usedPill.grade === 'real') {
-                  newWeighted = prevWeighted;
-                  pillEffectLog += ' | 实品药效：修为完全锁定';
-              } else {
-                  // 虚品
-                  newWeighted = (prevWeighted + newWeighted) / 2;
-                  pillEffectLog += ' | 虚品药效：修为倒退减缓';
-              }
+              pillEffectLog += (pillEffectLog ? ' | ' : '') + `护基丹生效(高阶)：修为完全锁定`;
+          } else if (diff === 0) {
+              newWeighted = 0.8 * prevWeighted + 0.2 * newWeighted;
+              pillEffectLog += (pillEffectLog ? ' | ' : '') + `护基丹生效(同阶)：修为微幅倒退 (0.8/0.2)`;
+          } else if (diff === -1) {
+              newWeighted = 0.5 * prevWeighted + 0.5 * newWeighted;
+              pillEffectLog += (pillEffectLog ? ' | ' : '') + `护基丹生效(低阶)：修为减缓倒退 (0.5/0.5)`;
+          } else {
+              pillEffectLog += (pillEffectLog ? ' | ' : '') + `护基丹无效：丹药境界过低`;
           }
-      } else if (protectXP && newWeighted < prevWeighted) { 
-          // 兼容旧逻辑/其他情况（如果有）
-          newWeighted = prevWeighted;
       }
 
       nextCultivation.currentXP = newWeighted;
-      // ... 后续代码不变
-      
       const target = getBreakthroughTarget(realm, stage);
       
       if (newWeighted >= target) {
-        const nextStageIdx = stage + 1;
-        const nextStageName = STAGES[nextStageIdx];
-        
         newMilestonesList.push({
           id: Date.now().toString(),
           timestamp: Date.now(),
           type: 'minor',
-          title: `突破至${REALMS[realm]}${nextStageName}`,
-          description: `瓶颈突破成功！本次综合评分 ${formatScore(newWeighted)} (要求 ≥ ${formatScore(target)})。`,
+          title: `突破至${REALMS[realm]}${STAGES[stage + 1]}`,
+          description: `瓶颈突破成功！本次综合评分 ${formatScore(newWeighted)}。`,
           stageDuration: nextCultivation.stageStudyTime,
           totalDuration: nextCultivation.totalStudyTime,
           stageSessions: nextCultivation.stageSessions,
           totalSessions: nextCultivation.totalSessions
         });
 
-        nextCultivation.stage = nextStageIdx;
+        nextCultivation.stage += 1;
         nextCultivation.currentXP = 0;
         nextCultivation.recentScores = [];
         nextCultivation.stageStudyTime = 0;
         nextCultivation.stageSessions = 0;
       }
-    } else if (stage === 6) {
-        // Perfect Stage (圆满)
-        nextCultivation.currentXP += calculatedScore;
-        const maxXP = getMaxXP(realm, stage); 
-        
-        if (nextCultivation.currentXP >= maxXP) {
-            newMilestonesList.push({
-                id: Date.now().toString(),
-                timestamp: Date.now(),
-                type: 'peak',
-                title: `到达${REALMS[realm]}大圆满`,
-                description: `修为已至化境，无可再进。需寻找契机渡劫飞升。`,
-                stageDuration: nextCultivation.stageStudyTime,
-                totalDuration: nextCultivation.totalStudyTime,
-                stageSessions: nextCultivation.stageSessions,
-                totalSessions: nextCultivation.totalSessions
-            });
-            
-            nextCultivation.currentXP = maxXP; 
-            nextCultivation.stage = 7; 
-            nextCultivation.recentScores = [];
-            nextCultivation.stageStudyTime = 0;
-            nextCultivation.stageSessions = 0;
-        }
     }
 
-    finalizeResults(nextCultivation, newMilestonesList, calculatedScore, totalAccVal, difficulty, usedPill, pillEffectLog, acquiredPills);
+    finalizeResults(nextCultivation, newMilestonesList, calculatedScore, originalScoreForDisplay, bonusScore, totalAccVal, difficulty, sessionTime, finalTrials, usedPill, pillEffectLog, acquiredPills, acquireLogs, prevCultivation);
   };
   
-  const finalizeResults = (
-      nextCultivation: CultivationState, 
-      newMilestonesList: Milestone[], 
-      calculatedScore: number, 
-      totalAccVal: number,
-      difficulty: number,
-      usedPill?: Pill,
-      pillEffectLog?: string,
-      acquiredPills?: Pill[]
-  ) => {
-    const result: GameResult = {
-      id: Date.now().toString(),
-      timestamp: Date.now(),
-      n,
-      interval,
-      totalTrials: sequence.length,
-      audioScore: { ...scoreRef.current.audio },
-      visualScore: { ...scoreRef.current.visual },
-      isVariable,
-      variableDifficulty: isVariable ? difficulty : undefined,
-      score: calculatedScore,
-      accuracy: totalAccVal,
-      device: getDeviceType(),
-      realmLevel: cultivation.realmLevel,
-      stage: cultivation.stage,
-      afterRealmLevel: nextCultivation.realmLevel,
-      afterStage: nextCultivation.stage,
-      pacingMode,
-      pillUsed: usedPill,
-      pillEffectLog,
-      pillAcquired: acquiredPills
-    };
-    
-    setLastResult(result);
-
-    setHistory(prev => {
-        const newH = [result, ...prev];
-        if (newH.length > 3000) newH.pop();
-        return newH;
-    });
-    
-    setCultivation(nextCultivation);
-    if (newMilestonesList.length > 0) {
-        setMilestones(prev => [...newMilestonesList, ...prev]);
-    }
-
-    setShowSummary(true);
-  };
-
   const nextTrial = (idx: number, seq: GameStep[], overrideDuration?: number) => {
     if (idx >= seq.length) {
       stopGame();
@@ -2187,7 +2184,6 @@ const Game = () => {
     let nextIntervalVal = runningIntervalRef.current;
 
     if (pacingMode === 'dynamic') {
-        let delta = 0;
         // Prioritize Error Logic
         if (hasError) {
             const rawNext = parseFloat((runningIntervalRef.current + 0.1).toFixed(2));
@@ -2373,18 +2369,31 @@ const Game = () => {
           <div style={{textAlign: 'center', marginBottom: 20}}>
             <h2 style={{margin: 0, fontSize: '1.5rem'}}>训练报告</h2>
             <div style={{color: '#64748b', margin: '8px 0', fontSize: '0.95rem'}}>
-              {result.isVariable ? (
-                <>Variable N ({result.variableDifficulty})</>
-              ) : (
-                 <>N = {result.n}</>
-              )}
-               {' '}| {result.interval}s 
-            </div>
-            {result.score !== undefined && (
-               <div style={{display: 'inline-flex', alignItems: 'center', gap: 6, background: '#fff7ed', color: '#ea580c', padding: '6px 12px', borderRadius: 20, fontWeight: 700, fontSize: '1.1rem', marginTop: 8}}>
-                 <Trophy size={18} /> {formatScore(result.score)}
-               </div>
+            {result.isVariable ? (
+              <>Variable N ({result.variableDifficulty})</>
+            ) : (
+              <>N = {result.n}</>
             )}
+            {' '}| 耗时: {result.sessionDuration?.toFixed(2)}s ({result.totalTrials}次)
+            {' '}| 间隔: {result.interval.toFixed(2)}s 
+          </div>
+
+          {result.baseScore !== undefined && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, marginTop: 12 }}>
+              {/* 奖杯旁边只放原分数纯数字，去掉中文 */}
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: '#fff7ed', color: '#ea580c', padding: '8px 20px', borderRadius: '32px', fontWeight: 700, fontSize: '1.5rem' }}>
+                <Trophy size={20} style={{ strokeWidth: 2.5 }} /> 
+                {formatScore(result.baseScore)}
+              </div>
+              
+              {/* 下方附加加成说明 */}
+              {result.bonusScore !== undefined && result.bonusScore > 0 && (
+                  <div style={{ color: '#f59e0b', fontSize: '0.9rem', fontWeight: 700, marginTop: 4 }}>
+                      (+{formatScore(result.bonusScore)} 丹药加成)
+                  </div>
+              )}
+            </div>
+          )}
           </div>
 
           <div className="summary-grid">
@@ -2400,12 +2409,15 @@ const Game = () => {
                 </div>
             )}
 
-            {result.pillAcquired && result.pillAcquired.length > 0 && (
+            {result.acquireLogs && result.acquireLogs.length > 0 && (
                 <div className="summary-item" style={{background: '#ecfdf5', borderColor: '#a7f3d0'}}>
-                    <div style={{fontWeight: 700, color: '#059669', marginBottom: 4}}>获得物品</div>
-                    {result.pillAcquired.map(p => (
-                        <div key={p.id} style={{fontSize: '0.9rem', marginBottom: 2}}>{getPillName(p)}</div>
+                    <div style={{fontWeight: 700, color: '#059669', marginBottom: 4}}>掉落详情</div>
+                    {result.acquireLogs.map((log, i) => (
+                        <div key={i} style={{fontSize: '0.85rem', marginBottom: 4, color: '#065f46', lineHeight: 1.4}}>• {log}</div>
                     ))}
+                    <div style={{marginTop: 6, fontWeight: 700, fontSize: '0.85rem', color: '#059669'}}>
+                        已收入储物袋：{result.pillAcquired?.map(p => getPillName(p)).join(', ')}
+                    </div>
                 </div>
             )}
           </div>
@@ -2429,12 +2441,11 @@ const Game = () => {
   };
   
   // Sorted Inventory for Display (with Grouping)
-// Sorted Inventory for Display (with Grouping)
   const groupedInventory = useMemo(() => {
       const groups = new Map<string, StackedPill>();
       
       inventory.forEach(p => {
-          // 确保 Key 包含 subRealm 和 grade，防止不同品级混淆
+          // 修复：确保 Key 包含 subRealm 和 grade，防止不同品级混淆
           const srKey = (p.subRealm !== undefined && p.subRealm !== null) ? p.subRealm : 'n';
           const key = `${p.type}-${p.realm}-${srKey}-${p.grade}`;
           
@@ -2458,13 +2469,12 @@ const Game = () => {
           if (subB !== subA) return subB - subA;
           
           const getGradeVal = (g: PillGrade, type: PillType) => {
-              if (type === 'focus') {
-                   if (g === 'high') return 3;
-                   if (g === 'mid') return 2;
-                   return 1;
-              }
-              if (type === 'foundation') {
+              if (type === 'focus' || type === 'foundation') {
                   return g === 'real' ? 2 : 1; // 实品排在虚品前面
+              }
+              if (type === 'preservation') {
+                  const map: Record<string, number> = { unique: 5, rare: 4, fine: 3, finished: 2, defective: 1 };
+                  return map[g] || 0;
               }
               const map: Record<string, number> = { low: 1, mid: 2, high: 3, peak: 4, human: 5, earth: 6, heaven: 7 };
               return map[g] || 0;
@@ -2482,7 +2492,7 @@ const Game = () => {
   };
 
   // Helper to preview pill effect
-const getPillEffectPreview = (pill: Pill) => {
+  const getPillEffectPreview = (pill: Pill) => {
       if (!pill) return '';
       
       const userRealm = cultivation.realmLevel;
@@ -2508,49 +2518,35 @@ const getPillEffectPreview = (pill: Pill) => {
       if (pill.type === 'focus') {
           if (![1, 3, 5].includes(userStage)) return "❌ 无效：当前不处于小境界瓶颈期。";
           
-          const userSubIdx = Math.floor((userStage - 1) / 2);
-          const userLinear = userRealm * 3 + userSubIdx;
-          const pillSubIdx = pill.subRealm ?? 0;
-          const pillLinear = pill.realm * 3 + pillSubIdx;
-          const diff = pillLinear - userLinear;
+          const userMinor = Math.floor((userStage - 1) / 2);
+          const userLevel = userRealm * 6 + userMinor * 2 + 0; // 用户瓶颈为虚品 (0)
+          const pillLevel = pill.realm * 6 + (pill.subRealm ?? 0) * 2 + (pill.grade === 'real' ? 1 : 0);
+          const diff = pillLevel - userLevel;
           
-          let baseGradeVal = 0;
-          if (pill.grade === 'mid') baseGradeVal = 1;
-          if (pill.grade === 'high') baseGradeVal = 2;
+          if (diff < 0) return "❌ 无效：丹药境界低于当前瓶颈。";
           
-          let resultGradeVal = baseGradeVal + diff;
-          let displayStatus = "";
-          
-          if (diff > 0) displayStatus = `✨ 药效提升 (+${diff}阶)`;
-          else if (diff < 0) displayStatus = `⚠️ 药效衰减 (${diff}阶)`;
-          else displayStatus = "✅ 标准药效";
-          
-          if (resultGradeVal < 0) return `❌ 无效：${displayStatus}，药力已散。`;
-          
-          resultGradeVal = Math.min(2, resultGradeVal);
-          const finalRate = resultGradeVal === 2 ? 100 : resultGradeVal === 1 ? 85 : 75;
-          const finalGradeStr = resultGradeVal === 2 ? '优品' : resultGradeVal === 1 ? '良品' : '次品';
-          
-          return `${displayStatus}：效果相当于${finalGradeStr}，转化率提升至 ${finalRate}%。`;
+          const rates = [72, 78, 86, 96, 100];
+          return `✅ 生效：转化率提升至 ${rates[Math.min(4, diff)]}%。`;
       }
       
       if (pill.type === 'foundation') {
           if (![1, 3, 5].includes(userStage)) return "❌ 无效：当前不处于瓶颈期。";
-          const userSub = Math.floor((userStage - 1)/2);
+          const userMinor = Math.floor((userStage - 1) / 2);
           
-          // 比较逻辑：大境界*10 + 小境界
-          const userVal = userRealm * 10 + userSub;
-          const pillVal = pill.realm * 10 + (pill.subRealm ?? 0);
+          const userLevel = userRealm * 6 + userMinor * 2 + 0;
+          const pillLevel = pill.realm * 6 + (pill.subRealm ?? 0) * 2 + (pill.grade === 'real' ? 1 : 0);
+          const diff = pillLevel - userLevel;
 
-          if (pillVal > userVal) {
-              return `✨ 完美药效：丹药阶位高于自身，虚品亦化为实品，完全锁定分数。`;
-          } else if (pillVal === userVal) {
-              // 同阶位，看品级
-              if (pill.grade === 'real') return "✅ 生效：实品护基，完全锁定分数不倒退。";
-              else return "✅ 生效：虚品护基，取 (原分+新分)/2 减缓倒退。";
-          }
+          if (diff >= 1) return `✨ 高阶药效：冲关倒退时修为完全锁定。`;
+          if (diff === 0) return `✅ 同阶药效：微幅减缓倒退 (0.8 / 0.2)。`;
+          if (diff === -1) return `✅ 低阶药效：减缓倒退 (0.5 / 0.5)。`;
           
-          return "❌ 无效：丹药境界/阶位不足。";
+          return "❌ 无效：丹药境界过低。";
+      }
+
+      if (pill.type === 'preservation') {
+          const bases = { unique: 16, rare: 22, fine: 30, finished: 40, defective: 52 };
+          return `✅ 生效：得分算法底数降至 ${bases[pill.grade as keyof typeof bases] || 64} (限难度N≤${pill.realm}时有效)。`;
       }
       
       if (pill.type === 'heavenly') {
@@ -2689,7 +2685,7 @@ const getPillEffectPreview = (pill: Pill) => {
              <h1 style={{margin: 0, fontSize: '1.2rem', fontWeight: 800, color: '#0f172a'}}>Dual N-Back</h1>
           </div>
           <div style={{display: 'flex', gap: 8}}>
-            <button className="btn btn-secondary" onClick={() => setShowGacha(true)} style={{padding: '6px 10px', fontSize: '0.9rem', color: '#7c3aed'}}>
+            <button className="btn btn-secondary" onClick={() => setShowGacha(true)} style={{position: 'relative',padding: '6px 10px', fontSize: '0.9rem', color: '#7c3aed'}}>
                 <Gift size={16} /> 坊市
                 {gachaState.availableDraws > 0 && <span style={{background: '#ef4444', color: 'white', borderRadius: '50%', width: 14, height: 14, fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'absolute', top: -4, right: -4}}>{gachaState.availableDraws}</span>}
             </button>
@@ -3157,7 +3153,7 @@ const getPillEffectPreview = (pill: Pill) => {
                                         <div style={{fontWeight: 600, fontSize: '0.95rem', display: 'flex', alignItems: 'center'}}>
                                             {getPillName(stack)}
                                             <span className={`pill-tag ${getPillTagClass(stack.type)}`}>
-                                                {stack.type === 'spirit' ? '经验' : stack.type === 'focus' ? '冲关' : stack.type === 'foundation' ? '护基' : '渡劫'}
+                                                {stack.type === 'spirit' ? '经验' : stack.type === 'focus' ? '冲关' : stack.type === 'foundation' ? '护基' : stack.type === 'preservation' ? '保元' : '渡劫'}
                                             </span>
                                         </div>
                                         <div style={{fontSize: '0.8rem', color: '#64748b', marginTop: 4}}>
@@ -3366,12 +3362,13 @@ const getPillEffectPreview = (pill: Pill) => {
               </div>
             ) : (
               <div>
-                {milestones.slice().reverse().map(m => (
+                {milestones.slice().sort((a, b) => b.timestamp - a.timestamp).map(m => ( // 【修改点】使用 sort 强制按时间倒序
                   <div key={m.id} className={`milestone-item ${m.type}`}>
                     <div className="milestone-date">
-                       <span>{formatDateTime(m.timestamp)}</span>
+                      <span>{formatDateTime(m.timestamp)}</span>
                     </div>
                     <div className="milestone-title">{m.title}</div>
+                    {/* 之前这里可能被简写了，现在确保正确显示描述 */}
                     <div className="milestone-desc">{m.description.replace(/&ge;/g, '≥')}</div>
                     <div className="milestone-meta">
                       {m.stageDuration !== undefined && <span>此阶耗时: {formatDuration(m.stageDuration)}</span>}
