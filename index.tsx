@@ -1035,28 +1035,26 @@ function getBreakthroughTarget(realm: number, stage: number): number {
 
 // 辅助函数：用于丹药掉落判定 (复用上述逻辑)
 // isReal 参数用于区分实品/虚品丹药倍率
+// 辅助函数：用于丹药掉落判定（严格按照瓶颈突破需要作为虚品基准）
 function getExpConstant(realm: number, subRealm: SubRealm, isReal: boolean): number {
-    // 这里的逻辑主要用于“丹药掉落判定”，通常参考的是“积累期”的量级，还是“突破期”的量级？
-    // 根据你的描述，护基丹/凝神丹是参考“经验常数”。
-    // 这里我们统一使用“积累期”的公式作为基准值（因为它更大，更难），或者使用你之前定义的虚品基准。
-    // 如果要严格对应“瓶颈突破需要”，则应该用 getBreakthroughTarget 的逻辑。
-    // 但鉴于丹药逻辑里有 *1.4, *1.5625 的实品设定，这里保留一个通用的计算器：
+    const power = Math.pow(10, realm);
+    let virtualVal = 0;
     
-    // 采用积累期公式作为丹药价值基准 (C * sqrt(n) * 10^n)
-    // 虚品系数
-    let c = 4; 
-    if (subRealm === 1) c = 8;
-    if (subRealm === 2) c = 16;
+    // 虚品对应的经验常数
+    if (subRealm === 0) virtualVal = 1 * power;      // 前期
+    else if (subRealm === 1) virtualVal = 2 * power; // 中期
+    else if (subRealm === 2) virtualVal = 4 * power; // 后期
     
-    const baseVal = c * Math.sqrt(realm) * Math.pow(10, realm);
+    if (!isReal) return virtualVal; // 虚品直接返回
     
-    if (!isReal) return Math.round(baseVal); // 虚品
+    // 实品对应的经验常数（在虚品基础上乘倍率）
+    if (subRealm === 0 || subRealm === 1) {
+        return Math.round(virtualVal * 1.4);
+    } else if (subRealm === 2) {
+        return Math.round(virtualVal * 1.5625);
+    }
     
-    // 实品倍率
-    if (subRealm === 0 || subRealm === 1) return Math.round(baseVal * 1.4);
-    if (subRealm === 2) return Math.round(baseVal * 1.5625);
-    
-    return Math.round(baseVal);
+    return virtualVal;
 }
 
 // New unified target getter matching the prompt's implied constants
@@ -3022,7 +3020,7 @@ const Game = () => {
                 <span style={{fontSize: '0.9rem', fontWeight: 600}}>间隔 (秒)</span>
                 <div className="input-control">
                   <button className="btn btn-secondary" style={{padding: '6px 10px'}} 
-                          onClick={() => setInterval(prev => Math.max(1.0, parseFloat((prev - 0.1).toFixed(1))))}>-</button>
+                          onClick={() => setInterval(prev => Math.max(1.00, parseFloat((prev - 0.05).toFixed(2))))}>-</button>
                   <input 
                       type="number"
                       className="val-input"
@@ -3031,10 +3029,10 @@ const Game = () => {
                           const v = parseFloat(e.target.value);
                           if (!isNaN(v) && v >= 0.1) setInterval(v);
                       }}
-                      step="0.1"
+                      step="0.05"
                   />
                   <button className="btn btn-secondary" style={{padding: '6px 10px'}} 
-                          onClick={() => setInterval(prev => parseFloat((prev + 0.1).toFixed(1)))}>+</button>
+                          onClick={() => setInterval(prev => parseFloat((prev + 0.05).toFixed(2)))}>+</button>
                 </div>
               </div>
               {pacingMode === 'dynamic' && (
