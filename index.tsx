@@ -2466,12 +2466,17 @@ const saveResults = (overrideTrials?: number) => {
       const groups = new Map<string, StackedPill>();
       
       inventory.forEach(p => {
-          // 修复：确保 Key 包含 subRealm 和 grade，防止不同品级混淆
-          const srKey = (p.subRealm !== undefined && p.subRealm !== null) ? p.subRealm : 'n';
-          const key = `${p.type}-${p.realm}-${srKey}-${p.grade}`;
+          // 【修复】强制标准化 Key 的生成，确保同类丹药合并
+          // 1. 境界转为数字
+          const normRealm = Number(p.realm);
+          // 2. 小境界：如果有值转为数字，没有则标记为 -1
+          const normSub = (p.subRealm !== undefined && p.subRealm !== null) ? Number(p.subRealm) : -1;
+          // 3. 构造唯一 Key
+          const key = `${p.type}-${normRealm}-${normSub}-${p.grade}`;
           
           if (!groups.has(key)) {
-              groups.set(key, { ...p, count: 0, ids: [] });
+              // 如果是新组，复制属性（注意要保留 subRealm 的原始值或标准化值）
+              groups.set(key, { ...p, realm: normRealm, subRealm: normSub === -1 ? undefined : normSub as SubRealm, count: 0, ids: [] });
           }
           
           const g = groups.get(key)!;
@@ -2485,8 +2490,10 @@ const saveResults = (overrideTrials?: number) => {
       return stackList.sort((a, b) => {
           if (b.realm !== a.realm) return b.realm - a.realm;
           
-          const subA = a.subRealm ?? -1;
-          const subB = b.subRealm ?? -1;
+          // 处理 subRealm 可能为 undefined 的情况
+          const subA = (a.subRealm !== undefined && a.subRealm !== null) ? Number(a.subRealm) : -1;
+          const subB = (b.subRealm !== undefined && b.subRealm !== null) ? Number(b.subRealm) : -1;
+          
           if (subB !== subA) return subB - subA;
           
           const getGradeVal = (g: PillGrade, type: PillType) => {
