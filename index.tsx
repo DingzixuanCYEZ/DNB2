@@ -1871,11 +1871,15 @@ const saveResults = (overrideTrials?: number) => {
     const dropRealmBase = Math.floor(difficulty);
     const names = ['前期','中期','后期'];
 
+    // 【新增】：计算玩家当前的绝对级别 (每跨1大境界+6级，每跨1小境界+2级)
+    const userMinor = Math.min(2, Math.floor(nextCultivation.stage / 2));
+    const userAbsLevel = nextCultivation.realmLevel * 6 + userMinor * 2;
+
     // 1. Focus Pill Drops (凝神丹 - Variable Mode only)
     if (isVariable) {
         let focusFound = false;
-        // 从当前难度大境界开始，向下遍历寻找符合分数的丹药
-        for (let r = dropRealmBase; r >= 1; r--) {
+        // 解除 N向下取整 的锁定，直接从最高境界(10)向下搜索
+        for (let r = 10; r >= 1; r--) {
             if (focusFound) break;
             const levels = [
                 {sub: 2, isReal: true, val: getExpConstant(r, 2, true)},
@@ -1888,8 +1892,11 @@ const saveResults = (overrideTrials?: number) => {
             
             for (const l of levels) {
                 if (pureOriginalScore >= l.val / 3) {
-                    // 【修复】：凝神丹严格限制，必须大于等于当前大境界，不允许 -1
-                    if (r >= nextCultivation.realmLevel) {
+                    // 计算当前枚举丹药的绝对级别
+                    const pillAbsLevel = r * 6 + l.sub * 2 + (l.isReal ? 1 : 0);
+                    
+                    // 凝神丹：必须 >= 自身当前级别（不允许比自己低）
+                    if (pillAbsLevel >= userAbsLevel) {
                         const g = l.isReal ? 'real' : 'virtual';
                         acquiredPills.push({
                             id: Date.now().toString() + 'f', type: 'focus', realm: r,
@@ -1906,7 +1913,7 @@ const saveResults = (overrideTrials?: number) => {
 
     // 2. Foundation Pill Drops (护基丹)
     let foundationFound = false;
-    for (let r = dropRealmBase; r >= 1; r--) {
+    for (let r = 10; r >= 1; r--) {
         if (foundationFound) break;
         const levels = [
             {sub: 2, isReal: true, val: getExpConstant(r, 2, true)},
@@ -1919,8 +1926,11 @@ const saveResults = (overrideTrials?: number) => {
         
         for (const l of levels) {
             if (pureOriginalScore >= l.val) {
-                // 允许掉落比自身当前境界低 1 级的丹药
-                if (r >= nextCultivation.realmLevel - 1) {
+                // 计算当前枚举丹药的绝对级别
+                const pillAbsLevel = r * 6 + l.sub * 2 + (l.isReal ? 1 : 0);
+                
+                // 护基丹：允许比自己低 2 个级别
+                if (pillAbsLevel >= userAbsLevel - 2) {
                     const g = l.isReal ? 'real' : 'virtual';
                     acquiredPills.push({
                         id: Date.now().toString() + 'fd', type: 'foundation', realm: r,
