@@ -1071,34 +1071,37 @@ function getFullStageName(realm: number, stage: number) {
 }
 
 // --- 新增：进度文本格式化函数 ---
-const getPercentageStr = (realm?: number, stage?: number, xp?: number) => {
+const getProgressStr = (realm?: number, stage?: number, xp?: number, mode: 'percent' | 'exact' = 'percent') => {
     if (realm === undefined || stage === undefined || xp === undefined) return '';
-    if (realm >= 10 || stage === 7) return ''; // 渡劫飞升 或 大圆满 无百分比
+    if (realm >= 10 || stage === 7) return ''; // 渡劫飞升 或 大圆满 无进度
     
     const isBottleneck = stage === 1 || stage === 3 || stage === 5;
     const target = isBottleneck ? getBreakthroughTarget(realm, stage) : getMaxXP(realm, stage);
     const safeTarget = target > 0 ? target : 1;
-    const pct = Math.min(100, (xp / safeTarget) * 100);
-    return `${pct.toFixed(1)}%`;
+    
+    if (mode === 'exact') {
+        return `${formatScore(xp)}/${formatScore(target)}`;
+    } else {
+        const pct = Math.min(100, (xp / safeTarget) * 100);
+        return `${pct.toFixed(1)}%`;
+    }
 };
 
-const formatProgressChange = (sRealm?: number, sStage?: number, sXP?: number, eRealm?: number, eStage?: number, eXP?: number) => {
+const formatProgressChange = (sRealm?: number, sStage?: number, sXP?: number, eRealm?: number, eStage?: number, eXP?: number, mode: 'percent' | 'exact' = 'percent') => {
     if (sRealm === undefined || sStage === undefined) return '记录缺失';
     const sName = getFullStageName(sRealm, sStage);
     const eName = getFullStageName(eRealm ?? sRealm, eStage ?? sStage);
     
-    const sPct = getPercentageStr(sRealm, sStage, sXP);
-    const ePct = getPercentageStr(eRealm ?? sRealm, eStage ?? sStage, eXP);
+    const sProg = getProgressStr(sRealm, sStage, sXP, mode);
+    const eProg = getProgressStr(eRealm ?? sRealm, eStage ?? sStage, eXP, mode);
 
-    const sPart = sPct ? `${sName} ${sPct}` : sName;
-    const ePart = ePct ? `${eName} ${ePct}` : eName;
+    const sPart = sProg ? `${sName} ${sProg}` : sName;
+    const ePart = eProg ? `${eName} ${eProg}` : eName;
 
     if (sName === eName) {
-        // 同一境界无变化 (如：筑基中期 50% -> 80%)
-        if (!sPct && !ePct) return sName; // 如大圆满
-        return `${sName} ${sPct || '?%'} -> ${ePct || '?%'}`;
+        if (!sProg && !eProg) return sName; // 兼容没有XP的老记录
+        return `${sName} ${sProg || '?'} -> ${eProg || '?'}`;
     } else {
-        // 境界发生变化 (如：筑基中期 50% -> 筑基中期巅峰 60%)
         return `${sPart} -> ${ePart}`;
     }
 };
@@ -1137,7 +1140,8 @@ const HistoryDayGroup: React.FC<HistoryDayGroupProps> = ({
             startRecord.beforeXP,
             endRecord.afterRealmLevel ?? endRecord.realmLevel, 
             endRecord.afterStage ?? endRecord.stage, 
-            endRecord.afterXP
+            endRecord.afterXP,
+            'percent' // 每日总计保持百分比显示
         );
     } else {
         realmChangeText = "修炼记录";
@@ -1177,7 +1181,7 @@ const HistoryDayGroup: React.FC<HistoryDayGroupProps> = ({
                                     </div>
                                   <div style={{fontSize: '0.8rem', color: '#475569', marginBottom: 8, display: 'flex', alignItems: 'center'}}>
                                         <span style={{background: '#e0f2fe', color: '#0369a1', padding: '2px 6px', borderRadius: 4, fontSize: '0.75rem', fontWeight: 600}}>
-                                            {formatProgressChange(run.realmLevel, run.stage, run.beforeXP, run.afterRealmLevel ?? run.realmLevel, run.afterStage ?? run.stage, run.afterXP)}
+                                            {formatProgressChange(run.realmLevel, run.stage, run.beforeXP, run.afterRealmLevel ?? run.realmLevel, run.afterStage ?? run.stage, run.afterXP,'exact')}
                                         </span>
                                     </div>
                                     <div style={{marginBottom: 8}}>
