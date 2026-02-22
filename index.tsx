@@ -2044,8 +2044,8 @@ const saveResults = (overrideTrials?: number) => {
           timestamp: Date.now(),
           type: 'peak',
           title: `到达${REALMS[realm]}${stage === 6 ? '大圆满' : STAGES[stage]+'巅峰'}`,
-          // 【修改点】下面这行增加了具体的数值显示
-          description: `修为积累圆满 (需达到 ${formatScore(maxXP)} 经验)。即将面临突破瓶颈。`,
+          // 【修改处】详细列出：当前积累总分 / 目标分数
+          description: `修为积累圆满 (当前: ${formatScore(nextCultivation.currentXP)} / 目标: ${formatScore(maxXP)})。即将面临突破瓶颈。`,
           stageDuration: nextCultivation.stageStudyTime,
           totalDuration: nextCultivation.totalStudyTime,
           stageSessions: nextCultivation.stageSessions,
