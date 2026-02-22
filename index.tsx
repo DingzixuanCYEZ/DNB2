@@ -1730,10 +1730,10 @@ const Game = () => {
     setShowSummary(true);
   };
 
-  const saveResults = () => {
-// 新增这一行：获取实际进行的轮数
-    const finalTrials = Math.max(0, currentIndexRef.current);
-
+const saveResults = (overrideTrials?: number) => {
+    // 如果传入了精确的次数就用传入的，否则用当前索引兜底
+    const finalTrials = overrideTrials !== undefined ? overrideTrials : Math.max(0, currentIndexRef.current);
+    if (finalTrials === 0) return;
 // 耗时严格按照：设置的时间间隔 * 实际进行的轮数
     const sessionTime = finalTrials * interval;
     const vScore = scoreRef.current.visual;
