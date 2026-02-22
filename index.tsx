@@ -1872,55 +1872,66 @@ const saveResults = (overrideTrials?: number) => {
     const names = ['前期','中期','后期'];
 
     // 1. Focus Pill Drops (凝神丹 - Variable Mode only)
-    if (isVariable && dropRealmBase > 0) {
-        const levels = [
-            {sub: 2, isReal: true, val: getExpConstant(dropRealmBase, 2, true)},
-            {sub: 2, isReal: false, val: getExpConstant(dropRealmBase, 2, false)},
-            {sub: 1, isReal: true, val: getExpConstant(dropRealmBase, 1, true)},
-            {sub: 1, isReal: false, val: getExpConstant(dropRealmBase, 1, false)},
-            {sub: 0, isReal: true, val: getExpConstant(dropRealmBase, 0, true)},
-            {sub: 0, isReal: false, val: getExpConstant(dropRealmBase, 0, false)},
-        ];
-        
-        for (const l of levels) {
-            if (pureOriginalScore >= l.val / 3) {
-                if (dropRealmBase >= nextCultivation.realmLevel) {
-                    const g = l.isReal ? 'real' : 'virtual';
-                    acquiredPills.push({
-                        id: Date.now().toString() + 'f', type: 'focus', realm: dropRealmBase,
-                        subRealm: l.sub as SubRealm, grade: g, timestamp: Date.now()
-                    });
-                    acquireLogs.push(`原分数 ${pureOriginalScore.toFixed(0)} >= ${(l.val/3).toFixed(0)} (${REALMS[dropRealmBase]}${names[l.sub]}${g==='real'?'实品':'虚品'}要求 /3)，获得凝神丹`);
+    if (isVariable) {
+        let focusFound = false;
+        // 从当前难度大境界开始，向下遍历寻找符合分数的丹药
+        for (let r = dropRealmBase; r >= 1; r--) {
+            if (focusFound) break;
+            const levels = [
+                {sub: 2, isReal: true, val: getExpConstant(r, 2, true)},
+                {sub: 2, isReal: false, val: getExpConstant(r, 2, false)},
+                {sub: 1, isReal: true, val: getExpConstant(r, 1, true)},
+                {sub: 1, isReal: false, val: getExpConstant(r, 1, false)},
+                {sub: 0, isReal: true, val: getExpConstant(r, 0, true)},
+                {sub: 0, isReal: false, val: getExpConstant(r, 0, false)},
+            ];
+            
+            for (const l of levels) {
+                if (pureOriginalScore >= l.val / 3) {
+                    // 【修复】：凝神丹严格限制，必须大于等于当前大境界，不允许 -1
+                    if (r >= nextCultivation.realmLevel) {
+                        const g = l.isReal ? 'real' : 'virtual';
+                        acquiredPills.push({
+                            id: Date.now().toString() + 'f', type: 'focus', realm: r,
+                            subRealm: l.sub as SubRealm, grade: g, timestamp: Date.now()
+                        });
+                        acquireLogs.push(`原分数 ${pureOriginalScore.toFixed(0)} >= ${(l.val/3).toFixed(0)} (${REALMS[r]}${names[l.sub]}${g==='real'?'实品':'虚品'}要求 /3)，获得凝神丹`);
+                    }
+                    focusFound = true; // 分数一旦匹配某档次，无论境界够不够都停止向下搜索
+                    break; 
                 }
-                break; 
             }
         }
     }
 
     // 2. Foundation Pill Drops (护基丹)
-    if (dropRealmBase > 0) {
-         const levels = [
-             {sub: 2, isReal: true, val: getExpConstant(dropRealmBase, 2, true)},
-             {sub: 2, isReal: false, val: getExpConstant(dropRealmBase, 2, false)},
-             {sub: 1, isReal: true, val: getExpConstant(dropRealmBase, 1, true)},
-             {sub: 1, isReal: false, val: getExpConstant(dropRealmBase, 1, false)},
-             {sub: 0, isReal: true, val: getExpConstant(dropRealmBase, 0, true)},
-             {sub: 0, isReal: false, val: getExpConstant(dropRealmBase, 0, false)},
-         ];
-         
-         for (const l of levels) {
-             if (pureOriginalScore >= l.val) {
-                 if (dropRealmBase >= nextCultivation.realmLevel) {
-                     const g = l.isReal ? 'real' : 'virtual';
-                     acquiredPills.push({
-                         id: Date.now().toString() + 'fd', type: 'foundation', realm: dropRealmBase,
-                         subRealm: l.sub as SubRealm, grade: g, timestamp: Date.now() + 1 
-                     });
-                     acquireLogs.push(`原分数 ${pureOriginalScore.toFixed(0)} >= ${l.val.toFixed(0)} (${REALMS[dropRealmBase]}${names[l.sub]}${g==='real'?'实品':'虚品'}要求)，获得护基丹`);
-                 }
-                 break; 
-             }
-         }
+    let foundationFound = false;
+    for (let r = dropRealmBase; r >= 1; r--) {
+        if (foundationFound) break;
+        const levels = [
+            {sub: 2, isReal: true, val: getExpConstant(r, 2, true)},
+            {sub: 2, isReal: false, val: getExpConstant(r, 2, false)},
+            {sub: 1, isReal: true, val: getExpConstant(r, 1, true)},
+            {sub: 1, isReal: false, val: getExpConstant(r, 1, false)},
+            {sub: 0, isReal: true, val: getExpConstant(r, 0, true)},
+            {sub: 0, isReal: false, val: getExpConstant(r, 0, false)},
+        ];
+        
+        for (const l of levels) {
+            if (pureOriginalScore >= l.val) {
+                // 允许掉落比自身当前境界低 1 级的丹药
+                if (r >= nextCultivation.realmLevel - 1) {
+                    const g = l.isReal ? 'real' : 'virtual';
+                    acquiredPills.push({
+                        id: Date.now().toString() + 'fd', type: 'foundation', realm: r,
+                        subRealm: l.sub as SubRealm, grade: g, timestamp: Date.now() + 1 
+                    });
+                    acquireLogs.push(`原分数 ${pureOriginalScore.toFixed(0)} >= ${l.val.toFixed(0)} (${REALMS[r]}${names[l.sub]}${g==='real'?'实品':'虚品'}要求)，获得护基丹`);
+                }
+                foundationFound = true;
+                break; 
+            }
+        }
     }
     
     // 3. Preservation Pill (保元丹)
@@ -2064,6 +2075,10 @@ const saveResults = (overrideTrials?: number) => {
           } else if (diff === -1) {
               newWeighted = 0.5 * prevWeighted + 0.5 * newWeighted;
               pillEffectLog += (pillEffectLog ? ' | ' : '') + `护基丹生效(低阶)：修为减缓倒退 (0.5/0.5)`;
+          } else if (diff === -2) {
+              // 【新增】比自己低2个级别，执行 0.2 prev + 0.8 now
+              newWeighted = 0.2 * prevWeighted + 0.8 * newWeighted;
+              pillEffectLog += (pillEffectLog ? ' | ' : '') + `护基丹生效(残效)：修为微弱保护 (0.2/0.8)`;
           } else {
               pillEffectLog += (pillEffectLog ? ' | ' : '') + `护基丹无效：丹药境界过低`;
           }
@@ -2099,7 +2114,7 @@ const saveResults = (overrideTrials?: number) => {
   const nextTrial = (idx: number, seq: GameStep[], overrideDuration?: number) => {
     if (idx >= seq.length) {
       stopGame();
-      saveResults();
+      saveResults(seq.length);
       return;
     }
 
@@ -2534,9 +2549,9 @@ const saveResults = (overrideTrials?: number) => {
           const diff = pillLevel - userLevel;
 
           if (diff >= 1) return `✨ 高阶药效：冲关倒退时修为完全锁定。`;
-          if (diff === 0) return `✅ 同阶药效：微幅减缓倒退 (0.8 / 0.2)。`;
+          if (diff === 0) return `✅ 同阶药效：大幅减缓倒退 (0.8 / 0.2)。`;
           if (diff === -1) return `✅ 低阶药效：减缓倒退 (0.5 / 0.5)。`;
-          
+          if (diff === -2) return `⚠️ 残效保护：微弱减缓倒退 (0.2 / 0.8)。`;
           return "❌ 无效：丹药境界过低。";
       }
 
