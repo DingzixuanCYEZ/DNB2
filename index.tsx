@@ -2103,7 +2103,8 @@ const saveResults = (overrideTrials?: number) => {
           timestamp: Date.now(),
           type: 'minor',
           title: `突破至${REALMS[realm]}${STAGES[stage + 1]}`,
-          description: `瓶颈突破成功！本次综合评分 ${formatScore(newWeighted)}。`,
+          // 【修改处】详细列出：当前综合评分 / 目标评分
+          description: `瓶颈突破成功！(当前: ${formatScore(newWeighted)} / 目标: ${formatScore(target)})。`,
           stageDuration: nextCultivation.stageStudyTime,
           totalDuration: nextCultivation.totalStudyTime,
           stageSessions: nextCultivation.stageSessions,
