@@ -1983,14 +1983,18 @@ const saveResults = (overrideTrials?: number) => {
     const dropRealmBase = Math.floor(difficulty);
     const names = ['前期','中期','后期'];
 
-    // 【新增】：计算玩家当前的绝对级别 (每跨1大境界+6级，每跨1小境界+2级)
+    // 计算玩家当前的绝对级别 (每跨1大境界+6级，每跨1小境界+2级)
     const userMinor = Math.min(2, Math.floor(nextCultivation.stage / 2));
     const userAbsLevel = nextCultivation.realmLevel * 6 + userMinor * 2;
 
     // 1. Focus Pill Drops (凝神丹 - Variable Mode only)
     if (isVariable) {
         let focusFound = false;
-        // 解除 N向下取整 的锁定，直接从最高境界(10)向下搜索
+        // 独立掷骰子算机缘
+        const randFocus = Math.random() || 0.0001;
+        const mFocus = 1.4 * Math.log10(3.3 / randFocus);
+        const refinedScoreFocus = pureOriginalScore * mFocus;
+
         for (let r = 10; r >= 1; r--) {
             if (focusFound) break;
             const levels = [
@@ -2003,20 +2007,22 @@ const saveResults = (overrideTrials?: number) => {
             ];
             
             for (const l of levels) {
-                if (pureOriginalScore >= l.val / 3) {
-                    // 计算当前枚举丹药的绝对级别
+                const threshold = l.val / 3;
+                // 【核心：变换前 or 变换后 只要有一个达标即可】
+                if (pureOriginalScore >= threshold || refinedScoreFocus >= threshold) {
                     const pillAbsLevel = r * 6 + l.sub * 2 + (l.isReal ? 1 : 0);
                     
-                    // 凝神丹：必须 >= 自身当前级别（不允许比自己低）
                     if (pillAbsLevel >= userAbsLevel) {
                         const g = l.isReal ? 'real' : 'virtual';
                         acquiredPills.push({
                             id: Date.now().toString() + 'f', type: 'focus', realm: r,
                             subRealm: l.sub as SubRealm, grade: g, timestamp: Date.now()
                         });
-                        acquireLogs.push(`原分数 ${pureOriginalScore.toFixed(0)} >= ${(l.val/3).toFixed(0)} (${REALMS[r]}${names[l.sub]}${g==='real'?'实品':'虚品'}要求 /3)，获得凝神丹`);
+                        
+                        const usedScore = Math.max(pureOriginalScore, refinedScoreFocus);
+                        acquireLogs.push(`凝神机缘: M=${mFocus.toFixed(2)}x。原分 ${pureOriginalScore.toFixed(0)} -> 质变 ${refinedScoreFocus.toFixed(0)}。最高匹配: ${usedScore.toFixed(0)} >= ${threshold.toFixed(0)} (${REALMS[r]}${names[l.sub]}${g==='real'?'实品':'虚品'}要求/3)`);
                     }
-                    focusFound = true; // 分数一旦匹配某档次，无论境界够不够都停止向下搜索
+                    focusFound = true;
                     break; 
                 }
             }
@@ -2025,6 +2031,11 @@ const saveResults = (overrideTrials?: number) => {
 
     // 2. Foundation Pill Drops (护基丹)
     let foundationFound = false;
+    // 独立掷骰子算机缘
+    const randFound = Math.random() || 0.0001;
+    const mFound = 1.4 * Math.log10(3.3 / randFound);
+    const refinedScoreFound = pureOriginalScore * mFound;
+
     for (let r = 10; r >= 1; r--) {
         if (foundationFound) break;
         const levels = [
@@ -2037,18 +2048,20 @@ const saveResults = (overrideTrials?: number) => {
         ];
         
         for (const l of levels) {
-            if (pureOriginalScore >= l.val) {
-                // 计算当前枚举丹药的绝对级别
+            const threshold = l.val;
+            // 【核心：变换前 or 变换后 只要有一个达标即可】
+            if (pureOriginalScore >= threshold || refinedScoreFound >= threshold) {
                 const pillAbsLevel = r * 6 + l.sub * 2 + (l.isReal ? 1 : 0);
                 
-                // 护基丹：允许比自己低 2 个级别
                 if (pillAbsLevel >= userAbsLevel - 2) {
                     const g = l.isReal ? 'real' : 'virtual';
                     acquiredPills.push({
                         id: Date.now().toString() + 'fd', type: 'foundation', realm: r,
                         subRealm: l.sub as SubRealm, grade: g, timestamp: Date.now() + 1 
                     });
-                    acquireLogs.push(`原分数 ${pureOriginalScore.toFixed(0)} >= ${l.val.toFixed(0)} (${REALMS[r]}${names[l.sub]}${g==='real'?'实品':'虚品'}要求)，获得护基丹`);
+                    
+                    const usedScore = Math.max(pureOriginalScore, refinedScoreFound);
+                    acquireLogs.push(`护基机缘: M=${mFound.toFixed(2)}x。原分 ${pureOriginalScore.toFixed(0)} -> 质变 ${refinedScoreFound.toFixed(0)}。最高匹配: ${usedScore.toFixed(0)} >= ${threshold.toFixed(0)} (${REALMS[r]}${names[l.sub]}${g==='real'?'实品':'虚品'}要求)`);
                 }
                 foundationFound = true;
                 break; 
@@ -2058,13 +2071,23 @@ const saveResults = (overrideTrials?: number) => {
     
     // 3. Preservation Pill (保元丹)
     if (interval <= 2.5 && dropRealmBase > 0) {
-        const x = pureOriginalScore * (2.5 - interval) / Math.pow(10, difficulty);
+        // 独立掷骰子算机缘
+        const randPres = Math.random() || 0.0001;
+        const mPres = 1.4 * Math.log10(3.3 / randPres);
+        
+        // 分别计算原实力系数和质变后的系数
+        const xBase = Math.min(pureOriginalScore / Math.pow(10, difficulty), 1) * (2.5 - interval);
+        const xRefined = Math.min((pureOriginalScore * mPres) / Math.pow(10, difficulty), 1) * (2.5 - interval);
+        
+        // 取最大值保底
+        const xFinal = Math.max(xBase, xRefined);
+
         let pGrade: PillGrade | null = null;
-        if (x >= 1) pGrade = 'unique';
-        else if (x >= 0.8) pGrade = 'rare';
-        else if (x >= 0.6) pGrade = 'fine';
-        else if (x >= 0.4) pGrade = 'finished';
-        else if (x >= 0.25) pGrade = 'defective';
+        if (xFinal >= 1) pGrade = 'unique';
+        else if (xFinal >= 0.8) pGrade = 'rare';
+        else if (xFinal >= 0.6) pGrade = 'fine';
+        else if (xFinal >= 0.4) pGrade = 'finished';
+        else if (xFinal >= 0.2) pGrade = 'defective';
         
         if (pGrade) {
             acquiredPills.push({
@@ -2074,27 +2097,32 @@ const saveResults = (overrideTrials?: number) => {
                 grade: pGrade,
                 timestamp: Date.now() + 3
             });
-            acquireLogs.push(`保元系数 x=${x.toFixed(2)}，获得保元丹`);
+            acquireLogs.push(`保元机缘: M=${mPres.toFixed(2)}x。基础系数 ${xBase.toFixed(2)} -> 质变系数 ${xRefined.toFixed(2)}。最终结算: x=${xFinal.toFixed(2)}，获得保元丹`);
         }
     }
 
     // 4. Heavenly Pill (通天渡厄丹)
-    if (dropRealmBase > 0) {
+    if (dropRealmBase > 0 && dropRealmBase >= nextCultivation.realmLevel) {
+        // 独立掷骰子算神识感应
+        const randHeav = Math.random() || 0.0001;
+        const accBonus = 10 * Math.log10(1 / randHeav);
+        const refinedAcc = Math.min(totalAccVal + accBonus, 100);
+        
+        // 因为总是加分，直接取推演后的准确率
         let hGrade: PillGrade | null = null;
-        if (totalAccVal === 100) hGrade = 'heaven';
-        else if (totalAccVal >= 90) hGrade = 'earth';
-        else if (totalAccVal >= 80) hGrade = 'human';
+        if (refinedAcc >= 100) hGrade = 'heaven';
+        else if (refinedAcc >= 90) hGrade = 'earth';
+        else if (refinedAcc >= 80) hGrade = 'human';
         
         if (hGrade) {
-             if (dropRealmBase > nextCultivation.realmLevel) {
-                 acquiredPills.push({
-                     id: Date.now().toString() + 'h',
-                     type: 'heavenly',
-                     realm: dropRealmBase,
-                     grade: hGrade,
-                     timestamp: Date.now() + 2 
-                 });
-             }
+             acquiredPills.push({
+                 id: Date.now().toString() + 'h',
+                 type: 'heavenly',
+                 realm: dropRealmBase,
+                 grade: hGrade,
+                 timestamp: Date.now() + 2 
+             });
+             acquireLogs.push(`神识通感: 补正 +${accBonus.toFixed(1)}%。实际准确率 ${totalAccVal.toFixed(1)}% -> 推演准确率 ${refinedAcc.toFixed(1)}%，获得通天渡厄丹`);
         }
     }
     
