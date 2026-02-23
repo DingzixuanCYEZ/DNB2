@@ -1069,7 +1069,60 @@ function getFullStageName(realm: number, stage: number) {
     if (realm === 0) return '凡人';
     return `${REALMS[realm]}${STAGES[stage]}`;
 }
+// --- 新增：坊市炼丹概率数学模型 ---
 
+// 误差函数 (erf) 实现，用于精确计算正态分布
+function erf(x: number): number {
+    const sign = x < 0 ? -1 : 1;
+    x = Math.abs(x);
+    const a1 =  0.254829592;
+    const a2 = -0.284496736;
+    const a3 =  1.421413741;
+    const a4 = -1.453152027;
+    const a5 =  1.061405429;
+    const p  =  0.3275911;
+    const t = 1.0 / (1.0 + p * x);
+    const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+    return sign * y;
+}
+
+// 标准正态分布 CDF Φ(x)
+function standardNormalCDF(x: number): number {
+    return 0.5 * (1 + erf(x / Math.sqrt(2)));
+}
+
+// 根据方差计算各品级概率 (下品 [0,1), 中品 [1,2), 上品 [2,3), 极品 [3, inf))
+function calculatePillProbabilities(variance: number) {
+    const sigma = Math.sqrt(variance);
+    const p0 = standardNormalCDF(0);
+    const pLow = (standardNormalCDF(1 / sigma) - p0) * 2;
+    const pMid = (standardNormalCDF(2 / sigma) - standardNormalCDF(1 / sigma)) * 2;
+    const pHigh = (standardNormalCDF(3 / sigma) - standardNormalCDF(2 / sigma)) * 2;
+    const pPeak = (1.0 - standardNormalCDF(3 / sigma)) * 2;
+    
+    return { low: pLow, mid: pMid, high: pHigh, peak: pPeak };
+}
+
+// 获取小境界底分系数
+function getRealmBaseCoeff(idx: number): number {
+    const map = [1, 2, 4, 6, 8]; // 前期, 中期, 后期, 圆满, 大圆满
+    return map[idx] || 1;
+}
+
+// 计算绝对底分 (10^Realm * Coeff)
+function calculateBaseScore(realm: number, subRealmIndex: number): number {
+    return Math.pow(10, realm) * getRealmBaseCoeff(subRealmIndex);
+}
+
+// 将用户的 stage (0-7) 映射到丹药的 subRealm (0-4)
+function userStageToSubIndex(stage: number): number {
+    if (stage <= 1) return 0; // 前期/前期巅峰
+    if (stage <= 3) return 1; // 中期/中期巅峰
+    if (stage <= 5) return 2; // 后期/后期巅峰
+    if (stage === 6) return 3; // 圆满
+    return 4; // 大圆满
+}
+// --- 坊市数学模型结束 ---
 // --- 新增：进度文本格式化函数 ---
 const getProgressStr = (realm?: number, stage?: number, xp?: number, mode: 'percent' | 'exact' = 'percent') => {
     if (realm === undefined || stage === undefined || xp === undefined) return '';
@@ -1453,7 +1506,17 @@ const Game = () => {
   const [showInventory, setShowInventory] = useState(false);
   const [showGacha, setShowGacha] = useState(false);
   const [lastGachaResult, setLastGachaResult] = useState<Pill | null>(null); // New state for gacha result
+// --- Gacha Selection State ---
+  const [gachaTargetRealm, setGachaTargetRealm] = useState(1);
+  const [gachaTargetSub, setGachaTargetSub] = useState(0);
 
+  // 打开坊市时，自动将选项重置为你当前的境界
+  useEffect(() => {
+      if (showGacha) {
+          setGachaTargetRealm(Math.max(1, cultivation.realmLevel));
+          setGachaTargetSub(userStageToSubIndex(cultivation.stage));
+      }
+  }, [showGacha, cultivation.realmLevel, cultivation.stage]);
   const [showHistory, setShowHistory] = useState(false);
   const [expandedDays, setExpandedDays] = useState<Record<string, boolean>>({});
   
@@ -2403,36 +2466,46 @@ const saveResults = (overrideTrials?: number) => {
   const handleGachaDraw = () => {
     if (gachaState.availableDraws <= 0) return;
     
-    const realm = cultivation.realmLevel;
+    // 1. 计算用户和丹药的绝对底分
+    const userSubIdx = userStageToSubIndex(cultivation.stage);
+    const userBase = calculateBaseScore(cultivation.realmLevel, userSubIdx);
+    const pillBase = calculateBaseScore(gachaTargetRealm, gachaTargetSub);
+    
+    // 2. 计算方差 y = (用户底分/丹药底分) * 1.5
+    const ratio = Math.max(1, userBase / pillBase);
+    const variance = ratio * 1.5;
+    
+    // 3. 计算正态分布概率
+    const probs = calculatePillProbabilities(variance);
+    
+    // 4. 随机判定 (累加法)
     const rand = Math.random();
     let grade: PillGrade = 'low';
-    if (rand < 0.02) grade = 'peak';
-    else if (rand < 0.10) grade = 'high';
-    else if (rand < 0.40) grade = 'mid';
     
-    // 决定灵元丹的小境界
-    const userStage = cultivation.stage;
-    let pillSub: SubRealm = 0;
-    if (userStage <= 1) pillSub = 0; // 前期/前期巅峰 -> 前期
-    else if (userStage <= 3) pillSub = 1; // 中期
-    else if (userStage <= 5) pillSub = 2; // 后期
-    else if (userStage === 6) pillSub = 3; // 圆满
-    else pillSub = 4; // 大圆满
-
+    if (rand < probs.low) {
+        grade = 'low';
+    } else if (rand < probs.low + probs.mid) {
+        grade = 'mid';
+    } else if (rand < probs.low + probs.mid + probs.high) {
+        grade = 'high';
+    } else {
+        grade = 'peak';
+    }
+    
+    // 5. 产出丹药
     const newPill: Pill = {
         id: Date.now().toString(),
         type: 'spirit',
-        realm: realm,
-        subRealm: pillSub,
+        realm: gachaTargetRealm,
+        subRealm: gachaTargetSub as SubRealm,
         grade: grade,
         timestamp: Date.now()
     };
     
     setInventory(prev => [...prev, newPill]);
     setGachaState(prev => ({...prev, availableDraws: prev.availableDraws - 1}));
-    setLastGachaResult(newPill); // 记录抽奖结果用于显示
+    setLastGachaResult(newPill);
   };
-
   const renderSummary = (result: GameResult) => {
     return (
       <div className="modal-overlay" onClick={() => setShowSummary(false)}>
@@ -3253,20 +3326,93 @@ const saveResults = (overrideTrials?: number) => {
           <div className="modal-overlay" onClick={() => setShowGacha(false)}>
               <div className="modal" onClick={e => e.stopPropagation()}>
                   <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20}}>
-                    <h2 style={{margin: 0, fontSize: '1.25rem'}}>坊市抽奖</h2>
+                    <h2 style={{margin: 0, fontSize: '1.25rem'}}>坊市炼丹</h2>
                     <button style={{background: 'none', border: 'none', color: '#64748b', cursor: 'pointer'}} onClick={() => setShowGacha(false)}>
                         <X />
                     </button>
                 </div>
                 
-                <div style={{textAlign: 'center', padding: '20px 0'}}>
-                    <Gift size={64} color="#7c3aed" style={{marginBottom: 20}} />
-                    <div style={{fontSize: '1rem', fontWeight: 600, marginBottom: 8}}>
-                        当前抽奖机会: <span style={{color: '#7c3aed', fontSize: '1.2rem'}}>{gachaState.availableDraws}</span> 次
+                <div style={{textAlign: 'center', padding: '10px 0'}}>
+                    <Gift size={48} color="#7c3aed" style={{marginBottom: 10}} />
+                    <div style={{fontSize: '0.9rem', marginBottom: 20}}>
+                        剩余真火: <span style={{color: '#7c3aed', fontWeight: 700}}>{gachaState.availableDraws}</span> 次
+                        <div style={{fontSize: '0.75rem', color: '#64748b', marginTop: 4}}>
+                            每专注修炼 10 分钟积累一次真火<br/>
+                            当前进度: {(gachaState.accumulatedTime / 60).toFixed(1)} / 10.0 分钟
+                        </div>
                     </div>
-                    <div style={{fontSize: '0.85rem', color: '#64748b', marginBottom: 24}}>
-                        每专注修炼 10 分钟获得一次机会。<br/>
-                        当前累计: {(gachaState.accumulatedTime / 60).toFixed(1)} / 10.0 分钟
+
+                    {/* --- 炼丹目标选择区 --- */}
+                    <div style={{background: '#f8fafc', padding: 16, borderRadius: 12, border: '1px solid #e2e8f0', marginBottom: 24}}>
+                        <div style={{fontSize: '0.9rem', fontWeight: 600, marginBottom: 12, color: '#475569'}}>选择灵元丹境界</div>
+                        
+                        <div style={{display: 'flex', gap: 12, justifyContent: 'center', marginBottom: 16}}>
+                            <select 
+                                value={gachaTargetRealm}
+                                onChange={(e) => {
+                                    setGachaTargetRealm(parseInt(e.target.value));
+                                    setGachaTargetSub(0); // 切换大境界时重置小境界
+                                }}
+                                style={{padding: '8px 12px', borderRadius: 8, border: '1px solid #cbd5e1', background: 'white', fontWeight: 600, outline: 'none'}}
+                            >
+                                {Array.from({length: Math.max(1, cultivation.realmLevel)}).map((_, i) => (
+                                    <option key={i+1} value={i+1}>{REALMS[i+1]}</option>
+                                ))}
+                            </select>
+
+                            <select 
+                                value={gachaTargetSub}
+                                onChange={(e) => setGachaTargetSub(parseInt(e.target.value))}
+                                style={{padding: '8px 12px', borderRadius: 8, border: '1px solid #cbd5e1', background: 'white', fontWeight: 600, outline: 'none'}}
+                            >
+                                {[0,1,2,3,4].map(idx => {
+                                    // 不允许选择高于自己当前小境界的丹药
+                                    if (gachaTargetRealm === cultivation.realmLevel) {
+                                        const maxSub = userStageToSubIndex(cultivation.stage);
+                                        if (idx > maxSub) return null;
+                                    }
+                                    const subNames = ['前期', '中期', '后期', '圆满', '大圆满'];
+                                    return <option key={idx} value={idx}>{subNames[idx]}</option>;
+                                })}
+                            </select>
+                        </div>
+
+                        {/* --- 动态概率显示 --- */}
+                        {(() => {
+                            const userSub = userStageToSubIndex(cultivation.stage);
+                            const uBase = calculateBaseScore(cultivation.realmLevel, userSub);
+                            const pBase = calculateBaseScore(gachaTargetRealm, gachaTargetSub);
+                            
+                            const ratio = Math.max(1, uBase / pBase);
+                            const variance = ratio * 1.5;
+                            const probs = calculatePillProbabilities(variance);
+                            
+                            return (
+                                <div>
+                                    <div style={{fontSize: '0.75rem', color: '#94a3b8', marginBottom: 8}}>
+                                        炼制方差: σ² = {variance.toFixed(2)} (跨阶碾压: {ratio.toFixed(2)}x)
+                                    </div>
+                                    <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6}}>
+                                        <div style={{background: '#f1f5f9', padding: '8px 0', borderRadius: 6}}>
+                                            <div style={{fontSize: '0.7rem', color: '#64748b'}}>下品</div>
+                                            <div style={{fontWeight: 800, color: '#334155'}}>{(probs.low * 100).toFixed(1)}%</div>
+                                        </div>
+                                        <div style={{background: '#e0f2fe', padding: '8px 0', borderRadius: 6}}>
+                                            <div style={{fontSize: '0.7rem', color: '#0369a1'}}>中品</div>
+                                            <div style={{fontWeight: 800, color: '#0284c7'}}>{(probs.mid * 100).toFixed(1)}%</div>
+                                        </div>
+                                        <div style={{background: '#fae8ff', padding: '8px 0', borderRadius: 6}}>
+                                            <div style={{fontSize: '0.7rem', color: '#a21caf'}}>上品</div>
+                                            <div style={{fontWeight: 800, color: '#d946ef'}}>{(probs.high * 100).toFixed(1)}%</div>
+                                        </div>
+                                        <div style={{background: '#fffbeb', padding: '8px 0', borderRadius: 6, border: '1px solid #fcd34d'}}>
+                                            <div style={{fontSize: '0.7rem', color: '#b45309'}}>极品</div>
+                                            <div style={{fontWeight: 800, color: '#d97706'}}>{(probs.peak * 100).toFixed(1)}%</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })()}
                     </div>
                     
                     <button 
@@ -3275,26 +3421,17 @@ const saveResults = (overrideTrials?: number) => {
                         onClick={handleGachaDraw}
                         disabled={gachaState.availableDraws <= 0}
                     >
-                        {gachaState.availableDraws > 0 ? '抽取灵元丹' : '机会不足'}
+                        {gachaState.availableDraws > 0 ? '开炉炼制' : '真火不足'}
                     </button>
                     
                     {lastGachaResult && (
                         <div style={{marginTop: 20, animation: 'fadeIn 0.5s'}}>
-                            <div style={{fontSize: '0.9rem', color: '#059669', fontWeight: 600}}>恭喜获得：</div>
-                            <div style={{marginTop: 8, padding: 10, border: '1px solid #10b981', background: '#ecfdf5', borderRadius: 8, display: 'inline-block'}}>
+                            <div style={{fontSize: '0.9rem', color: '#059669', fontWeight: 600}}>成丹：</div>
+                            <div style={{marginTop: 8, padding: '10px 16px', border: '1px solid #10b981', background: '#ecfdf5', borderRadius: 8, display: 'inline-block', fontWeight: 700, color: '#065f46'}}>
                                 {getPillName(lastGachaResult)}
                             </div>
                         </div>
                     )}
-                    
-                    <div style={{marginTop: 20, textAlign: 'left', background: '#f9fafb', padding: 12, borderRadius: 8, fontSize: '0.8rem', color: '#4b5563'}}>
-                        <div style={{fontWeight: 700, marginBottom: 4}}>概率公示:</div>
-                        <div>• 下品灵元丹 (60%)</div>
-                        <div>• 中品灵元丹 (30%)</div>
-                        <div>• 上品灵元丹 (8%)</div>
-                        <div>• 极品灵元丹 (2%)</div>
-                        <div style={{marginTop: 4, color: '#9ca3af', fontSize: '0.75rem'}}>*丹药境界取决于当前修为</div>
-                    </div>
                 </div>
               </div>
           </div>
