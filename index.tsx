@@ -1504,6 +1504,7 @@ const Game = () => {
 
   const [selectedPillId, setSelectedPillId] = useState<string | null>(null);
   const [showInventory, setShowInventory] = useState(false);
+  const [inventoryFilter, setInventoryFilter] = useState<PillType | 'all'>('all'); // 【新增】储物袋分类过滤器
   const [showGacha, setShowGacha] = useState(false);
   const [lastGachaResult, setLastGachaResult] = useState<Pill | null>(null); // New state for gacha result
 // --- Gacha Selection State ---
@@ -2613,20 +2614,22 @@ const saveResults = (overrideTrials?: number) => {
   };
   
   // Sorted Inventory for Display (with Grouping)
+  // Sorted Inventory for Display (with Grouping)
   const groupedInventory = useMemo(() => {
       const groups = new Map<string, StackedPill>();
       
-      inventory.forEach(p => {
-          // 【修复】强制标准化 Key 的生成，确保同类丹药合并
-          // 1. 境界转为数字
+      // 【修改】：先根据当前的过滤器筛选丹药
+      const pillsToProcess = inventoryFilter === 'all' 
+          ? inventory 
+          : inventory.filter(p => p.type === inventoryFilter);
+      
+      pillsToProcess.forEach(p => {
+          // 强制标准化 Key 的生成，确保同类丹药合并
           const normRealm = Number(p.realm);
-          // 2. 小境界：如果有值转为数字，没有则标记为 -1
           const normSub = (p.subRealm !== undefined && p.subRealm !== null) ? Number(p.subRealm) : -1;
-          // 3. 构造唯一 Key
           const key = `${p.type}-${normRealm}-${normSub}-${p.grade}`;
           
           if (!groups.has(key)) {
-              // 如果是新组，复制属性（注意要保留 subRealm 的原始值或标准化值）
               groups.set(key, { ...p, realm: normRealm, subRealm: normSub === -1 ? undefined : normSub as SubRealm, count: 0, ids: [] });
           }
           
@@ -2641,7 +2644,6 @@ const saveResults = (overrideTrials?: number) => {
       return stackList.sort((a, b) => {
           if (b.realm !== a.realm) return b.realm - a.realm;
           
-          // 处理 subRealm 可能为 undefined 的情况
           const subA = (a.subRealm !== undefined && a.subRealm !== null) ? Number(a.subRealm) : -1;
           const subB = (b.subRealm !== undefined && b.subRealm !== null) ? Number(b.subRealm) : -1;
           
@@ -2649,7 +2651,7 @@ const saveResults = (overrideTrials?: number) => {
           
           const getGradeVal = (g: PillGrade, type: PillType) => {
               if (type === 'focus' || type === 'foundation') {
-                  return g === 'real' ? 2 : 1; // 实品排在虚品前面
+                  return g === 'real' ? 2 : 1;
               }
               if (type === 'preservation') {
                   const map: Record<string, number> = { unique: 5, rare: 4, fine: 3, finished: 2, defective: 1 };
@@ -2661,7 +2663,7 @@ const saveResults = (overrideTrials?: number) => {
           
           return getGradeVal(b.grade, b.type) - getGradeVal(a.grade, a.type);
       });
-  }, [inventory]);
+  }, [inventory, inventoryFilter]); // 【新增】将 inventoryFilter 加入依赖项
 
   const getPillTagClass = (type: PillType) => {
       if (type === 'spirit') return 'tag-spirit';
@@ -3296,17 +3298,49 @@ const saveResults = (overrideTrials?: number) => {
       {showInventory && (
         <div className="modal-overlay" onClick={() => setShowInventory(false)}>
             <div className="modal" onClick={e => e.stopPropagation()}>
-                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20}}>
+                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16}}>
                     <h2 style={{margin: 0, fontSize: '1.25rem'}}>储物袋</h2>
                     <button style={{background: 'none', border: 'none', color: '#64748b', cursor: 'pointer'}} onClick={() => setShowInventory(false)}>
                         <X />
                     </button>
                 </div>
-                
+
+                {/* --- 新增：分类导航栏 --- */}
+                <div style={{display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16, borderBottom: '1px solid #e2e8f0', paddingBottom: 12}}>
+                    {[
+                        { id: 'all', label: '全部' },
+                        { id: 'spirit', label: '经验' },
+                        { id: 'focus', label: '冲关' },
+                        { id: 'foundation', label: '护基' },
+                        { id: 'preservation', label: '保元' },
+                        { id: 'heavenly', label: '渡劫' }
+                    ].map(f => (
+                        <button
+                            key={f.id}
+                            onClick={() => setInventoryFilter(f.id as PillType | 'all')}
+                            style={{
+                                padding: '4px 10px',
+                                borderRadius: '12px',
+                                border: '1px solid',
+                                borderColor: inventoryFilter === f.id ? '#3b82f6' : '#cbd5e1',
+                                background: inventoryFilter === f.id ? '#eff6ff' : '#f8fafc',
+                                color: inventoryFilter === f.id ? '#2563eb' : '#64748b',
+                                fontSize: '0.8rem',
+                                fontWeight: inventoryFilter === f.id ? 700 : 500,
+                                cursor: 'pointer',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            {f.label}
+                        </button>
+                    ))}
+                </div>
+
+                {/* --- 列表为空的智能提示 --- */}
                 {groupedInventory.length === 0 ? (
                     <div style={{textAlign: 'center', padding: '40px 0', color: '#94a3b8'}}>
-                        <Briefcase size={40} style={{marginBottom: 10, opacity: 0.5}} />
-                        <p>空空如也</p>
+                        <Briefcase size={40} style={{margin: '0 auto 10px', opacity: 0.5}} />
+                        <p>{inventory.length === 0 ? '储物袋空空如也' : '该分类下暂无丹药'}</p>
                     </div>
                 ) : (
                     <div>
