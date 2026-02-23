@@ -1965,7 +1965,7 @@ const saveResults = (overrideTrials?: number) => {
         
         if (usedPill.type === 'heavenly') {
              if (nextCultivation.stage === 6 || nextCultivation.stage === 7) {
-                 if (usedPill.realm >= nextCultivation.realmLevel) {
+                 if (usedPill.realm > nextCultivation.realmLevel) {
                      if (usedPill.grade === 'human') tribulationReqOffset = 5; 
                      else if (usedPill.grade === 'earth') tribulationReqOffset = 10; 
                      else if (usedPill.grade === 'heaven') tribulationReqOffset = 15; 
@@ -2102,7 +2102,7 @@ const saveResults = (overrideTrials?: number) => {
     }
 
     // 4. Heavenly Pill (通天渡厄丹)
-    if (dropRealmBase > 0 && dropRealmBase >= nextCultivation.realmLevel) {
+    if (dropRealmBase > 0 && dropRealmBase > nextCultivation.realmLevel) {
         // 独立掷骰子算神识感应
         const randHeav = Math.random() || 0.0001;
         const accBonus = 10 * Math.log10(1 / randHeav);
@@ -2730,7 +2730,7 @@ const saveResults = (overrideTrials?: number) => {
       
       if (pill.type === 'heavenly') {
            if (userStage === 6 || userStage === 7) {
-               if (pill.realm >= userRealm) {
+               if (pill.realm > userRealm) {
                    return "✅ 生效：降低渡劫准确率要求。";
                }
                return "❌ 无效：丹药境界过低 (必须高于当前大境界)。";
