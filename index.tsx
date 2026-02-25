@@ -2221,15 +2221,15 @@ const saveResults = (overrideTrials?: number) => {
               newWeighted = prevWeighted;
               pillEffectLog += (pillEffectLog ? ' | ' : '') + `护基丹生效(高阶)：修为完全锁定`;
           } else if (diff === 0) {
-              newWeighted = 0.8 * prevWeighted + 0.2 * newWeighted;
-              pillEffectLog += (pillEffectLog ? ' | ' : '') + `护基丹生效(同阶)：修为微幅倒退 (0.8/0.2)`;
+              newWeighted = 0.75 * prevWeighted + 0.25 * newWeighted;
+              pillEffectLog += (pillEffectLog ? ' | ' : '') + `护基丹生效(同阶)：修为微幅倒退 (0.75/0.25)`;
           } else if (diff === -1) {
               newWeighted = 0.5 * prevWeighted + 0.5 * newWeighted;
               pillEffectLog += (pillEffectLog ? ' | ' : '') + `护基丹生效(低阶)：修为减缓倒退 (0.5/0.5)`;
           } else if (diff === -2) {
-              // 【新增】比自己低2个级别，执行 0.2 prev + 0.8 now
-              newWeighted = 0.2 * prevWeighted + 0.8 * newWeighted;
-              pillEffectLog += (pillEffectLog ? ' | ' : '') + `护基丹生效(残效)：修为微弱保护 (0.2/0.8)`;
+              // 【新增】比自己低2个级别，执行 0.25 prev + 0.75 now
+              newWeighted = 0.25 * prevWeighted + 0.75 * newWeighted;
+              pillEffectLog += (pillEffectLog ? ' | ' : '') + `护基丹生效(残效)：修为微弱保护 (0.25/0.75)`;
           } else {
               pillEffectLog += (pillEffectLog ? ' | ' : '') + `护基丹无效：丹药境界过低`;
           }
