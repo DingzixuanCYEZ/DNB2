@@ -2719,9 +2719,9 @@ const saveResults = (overrideTrials?: number) => {
           const diff = pillLevel - userLevel;
 
           if (diff >= 1) return `✨ 高阶药效：冲关倒退时修为完全锁定。`;
-          if (diff === 0) return `✅ 同阶药效：大幅减缓倒退 (0.8 / 0.2)。`;
+          if (diff === 0) return `✅ 同阶药效：大幅减缓倒退 (0.75 / 0.25)。`;
           if (diff === -1) return `✅ 低阶药效：减缓倒退 (0.5 / 0.5)。`;
-          if (diff === -2) return `⚠️ 残效保护：微弱减缓倒退 (0.2 / 0.8)。`;
+          if (diff === -2) return `⚠️ 残效保护：微弱减缓倒退 (0.25 / 0.75)。`;
           return "❌ 无效：丹药境界过低。";
       }
 
