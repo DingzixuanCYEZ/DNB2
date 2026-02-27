@@ -1406,6 +1406,8 @@ const getSavedSetting = (key: string, def: any) => {
 };
 
 // --- Master Multi-Mode State ---
+
+const Game = () => {
   const DEFAULT_MODE_DATA = {
       history:[],
       cultivation: { realmLevel: 1, stage: 0, currentXP: 0, recentScores:[], totalStudyTime: 0, stageStudyTime: 0, totalSessions: 0, stageSessions: 0 },
@@ -1437,22 +1439,21 @@ const getSavedSetting = (key: string, def: any) => {
   });
 
   const [activeMode, setActiveMode] = useState<PlayMode>('score');
-  const [showGlobalHistory, setShowGlobalHistory] = useState(false); // 综合记录弹窗
+  const [showGlobalHistory, setShowGlobalHistory] = useState(false);
 
   // 统一持久化存储
   useEffect(() => {
       localStorage.setItem('dual-n-back-master-v2', JSON.stringify(masterData));
   }, [masterData]);
 
-  // 状态更新包装器
   const updateModeData = useCallback((key: string, value: any) => {
       setMasterData(prev => ({
-          ...prev, modes: { ...prev.modes, [activeMode]: {
+          ...prev, modes: { ...prev.modes,[activeMode]: {
               ...prev.modes[activeMode],
               [key]: typeof value === 'function' ? value(prev.modes[activeMode][key]) : value
           }}
       }));
-  }, [activeMode]);
+  },[activeMode]);
 
   const updateSetting = useCallback((key: string, value: any) => {
       setMasterData(prev => ({
@@ -1465,7 +1466,6 @@ const getSavedSetting = (key: string, def: any) => {
       }));
   }, [activeMode]);
 
-  // 提取当前模式的活跃状态 (通过引用替换旧的独立 state)
   const currentMode = masterData.modes[activeMode];
 
   const history = currentMode.history;
@@ -1479,7 +1479,6 @@ const getSavedSetting = (key: string, def: any) => {
   const savedWeightsMap = currentMode.savedWeightsMap;
   const setSavedWeightsMap = (val: any) => updateModeData('savedWeightsMap', val);
 
-  // 提取当前模式的偏好设置
   const { n, interval, useCenter, isVariable, variableWeights, showFeedback, volume, displayTime, roundMode, customRoundCount, pacingMode, showRealtimeInterval, showProgressBar, showRoundCounter, showInputConfirmation } = currentMode.settings;
   const setN = (val: any) => updateSetting('n', val);
   const setInterval = (val: any) => updateSetting('interval', val);
@@ -1497,11 +1496,89 @@ const getSavedSetting = (key: string, def: any) => {
   const setShowRoundCounter = (val: any) => updateSetting('showRoundCounter', val);
   const setShowInputConfirmation = (val: any) => updateSetting('showInputConfirmation', val);
 
-  // 全局共享状态
   const gachaState = masterData.gachaState;
   const setGachaState = (val: any) => setMasterData(prev => ({
       ...prev, gachaState: typeof val === 'function' ? val(prev.gachaState) : val
   }));
+
+  // ==========================================
+  // 下面是被误删的 核心引擎状态，现在全部恢复！
+  // ==========================================
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [sequence, setSequence] = useState<GameStep[]>([]);
+  const[currentIndex, setCurrentIndex] = useState(-1);
+  const currentIndexRef = useRef(-1);
+  const[totalGameTrials, setTotalGameTrials] = useState(0);
+  
+  const [dynamicInterval, setDynamicInterval] = useState(DEFAULT_INTERVAL);
+  const runningIntervalRef = useRef(DEFAULT_INTERVAL);
+  const startTimeRef = useRef<number>(0);
+
+  const [selectedPillId, setSelectedPillId] = useState<string | null>(null);
+  const [showInventory, setShowInventory] = useState(false);
+  const[inventoryFilter, setInventoryFilter] = useState<PillType | 'all'>('all');
+  const[showGacha, setShowGacha] = useState(false);
+  const [lastGachaResult, setLastGachaResult] = useState<Pill | null>(null);
+
+  const[gachaTargetRealm, setGachaTargetRealm] = useState(1);
+  const [gachaTargetSub, setGachaTargetSub] = useState(0);
+  const [gachaTargetType, setGachaTargetType] = useState<PillType>('spirit');
+
+  useEffect(() => {
+      if (showGacha) {
+          setGachaTargetRealm(Math.max(1, cultivation.realmLevel));
+          setGachaTargetSub(userStageToSubIndex(cultivation.stage));
+          setGachaTargetType('spirit');
+      }
+  }, [showGacha, cultivation.realmLevel, cultivation.stage]);
+
+  const [showHistory, setShowHistory] = useState(false);
+  const [expandedDays, setExpandedDays] = useState<Record<string, boolean>>({});
+  
+  const [showSummary, setShowSummary] = useState(false);
+  const[showMilestones, setShowMilestones] = useState(false);
+  const [lastResult, setLastResult] = useState<GameResult | null>(null);
+  
+  const [activePos, setActivePos] = useState<number | null>(null);
+  const [currentNumberDisplay, setCurrentNumberDisplay] = useState<number | null>(null); 
+  
+  const [audioPressed, setAudioPressed] = useState(false);
+  const[visualPressed, setVisualPressed] = useState(false);
+  
+  const [audioFeedback, setAudioFeedback] = useState<'correct' | 'wrong' | null>(null);
+  const [visualFeedback, setVisualFeedback] = useState<'correct' | 'wrong' | null>(null);
+
+  const [searchN, setSearchN] = useState<string>('');
+  const [searchType, setSearchType] = useState<'all' | 'fixed' | 'variable'>('all');
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const scoreRef = useRef<Record<'audio' | 'visual', ScoreDetail>>({
+    audio: { hits: 0, misses: 0, falseAlarms: 0, correctRejections: 0 },
+    visual: { hits: 0, misses: 0, falseAlarms: 0, correctRejections: 0 }
+  });
+
+  const timerRef = useRef<number | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
+  const inputsRef = useRef({ audio: false, visual: false });
+  const prevTrialInputsRef = useRef({ audio: false, visual: false });
+  const currentTrialStartTimeRef = useRef<number>(0);
+  const sequenceRef = useRef<GameStep[]>([]); 
+
+  // 这是一个包含所有关键状态的 Ref，确保 saveResults 能读到最新数据
+  const latestStateRef = useRef({
+      n, interval, isVariable, variableWeights, pacingMode, 
+      cultivation, inventory, gachaState, milestones, history, selectedPillId
+  });
+
+  // 使用 Effect 实时更新 latestStateRef
+  useEffect(() => {
+      latestStateRef.current = {
+          n, interval, isVariable, variableWeights, pacingMode, 
+          cultivation, inventory, gachaState, milestones, history, selectedPillId
+      };
+  });
 
 
   const handleExportData = () => {
