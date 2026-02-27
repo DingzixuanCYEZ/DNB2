@@ -3899,7 +3899,7 @@ const saveResults = (overrideTrials?: number) => {
               </div>
           </div>
       )}
-
+      
       {/* History Modal */}
       {showHistory && (
         <div className="modal-overlay" onClick={() => setShowHistory(false)}>
