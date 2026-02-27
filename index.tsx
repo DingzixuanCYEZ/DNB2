@@ -877,7 +877,7 @@ function getPillName(pill: Pill): string {
   if (pill.type === 'heavenly') {
       return `${realmPart}·${gradeName}通天渡厄丹`;
   } else if (pill.type === 'preservation') {
-      return `${realmPart}·${gradeName}保元丹`;
+      return `${REALMS[pill.realm]}期·${gradeName}保元丹`;
   } else {
       const pName = pill.type === 'spirit' ? '灵元丹' : pill.type === 'focus' ? '凝神丹' : '护基丹';
       return `${realmPart}${subName}·${gradeName}${pName}`;
@@ -3674,8 +3674,8 @@ const saveResults = (overrideTrials?: number) => {
                                         <div style={{display: 'flex', gap: 12, justifyContent: 'center', marginBottom: 16}}>
                                             <span style={{fontSize: '0.85rem', alignSelf: 'center'}}>炼制 N =</span>
                                             <select value={gachaTargetRealm} onChange={e => setGachaTargetRealm(parseInt(e.target.value))} style={{padding: '6px 12px', borderRadius: 8, border: '1px solid #cbd5e1', outline: 'none', fontWeight: 600, background: 'white'}}>
-                                                {/* 允许选择到 自身大境界 + 1 */}
-                                                {Array.from({length: cultivation.realmLevel + 1}).map((_, i) => (
+                                                {/* 允许选择到 自身大境界 + 2 */}
+                                                {Array.from({length: cultivation.realmLevel + 2}).map((_, i) => (
                                                     <option key={i+1} value={i+1}>{i+1} ({REALMS[i+1] || '未知'})</option>
                                                 ))}
                                             </select>
