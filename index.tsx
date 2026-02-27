@@ -35,7 +35,59 @@ type PillGrade = 'low' | 'mid' | 'high' | 'peak'
 
 // 0:前期, 1:中期, 2:后期 3:圆满 4:大圆满
 type SubRealm = 0 | 1 | 2 | 3 | 4;
+// --- 新增：段位系统配置 ---
+const RANK_SYSTEM = [
+  { name: '黑铁行者', color: '#57534e' }, // 0-29
+  { name: '黄铜散修', color: '#92400e' }, // 30-59
+  { name: '白银真修', color: '#64748b' }, // 60-89
+  { name: '黄金真人', color: '#d97706' }, // 90-119
+  { name: '铂金宗师', color: '#0d9488' }, // 120-149
+  { name: '翡翠名宿', color: '#059669' }, // 150-179
+  { name: '钻石大能', color: '#2563eb' }, // 180-209
+  { name: '大师至尊', color: '#7c3aed' }, // 210-239
+  { name: '宗师天仙', color: '#dc2626' }, // 240-269
+  { name: '王者主宰', color: '#ea580c' }  // 270+
+];
 
+// 计算单个模式的分数
+// 公式: (大境界N - 1) * 8 + 小境界Index
+// 筑基(Realm 3)圆满(Stage 6) = (3-1)*8 + 6 = 22
+function getModeScore(realm: number, stage: number): number {
+    // 保护：如果 realm < 1 (比如凡人 0), 则分数为 0
+    if (realm < 1) return 0;
+    return (realm - 1) * 8 + stage;
+}
+
+// 获取段位详情
+function getRankInfo(totalScore: number) {
+    // 1. 确定大段位 (每30分一级)
+    const bigRankIdx = Math.min(Math.floor(totalScore / 30), RANK_SYSTEM.length - 1);
+    const config = RANK_SYSTEM[bigRankIdx];
+    
+    // 2. 计算在大段位内的剩余分数
+    // 如果已经是最高段位且溢出，还是按最高段位算，但星数可能会满
+    const remainder = bigRankIdx === RANK_SYSTEM.length - 1 
+        ? Math.max(0, totalScore - bigRankIdx * 30) 
+        : totalScore % 30;
+
+    // 3. 确定小段位 (每6分一级，共5级：V, IV, III, II, I)
+    // 0-5: V, 6-11: IV, ... 24-29: I
+    // 如果是大段位溢出，限制在 I
+    const subRankVal = Math.min(4, Math.floor(remainder / 6));
+    const subLabels = ['V', 'IV', 'III', 'II', 'I'];
+    const subRankStr = subLabels[subRankVal];
+    
+    // 4. 确定星数 (0-5星)
+    const stars = remainder % 6; // 0-5
+    
+    return {
+        title: config.name,
+        color: config.color,
+        subRank: subRankStr,
+        stars: stars,
+        totalScore: totalScore
+    };
+}
 interface Pill {
   id: string;
   type: PillType;
@@ -4076,7 +4128,7 @@ const saveResults = (overrideTrials?: number) => {
               flexDirection: 'column',
               padding: '20px 16px' 
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexShrink: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexShrink: 0 }}>
               <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#0369a1', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Activity size={22} /> 诸天综合卷宗
               </h2>
@@ -4085,7 +4137,50 @@ const saveResults = (overrideTrials?: number) => {
               </button>
             </div>
 
-            {/* 增加显式的滚动容器 */}
+            {/* --- 新增：当前段位展示面板 --- */}
+            {(() => {
+                // 计算当前四个模式的总分
+                let currentTotalScore = 0;
+                Object.keys(masterData.modes).forEach(mKey => {
+                    const cult = masterData.modes[mKey].cultivation;
+                    currentTotalScore += getModeScore(cult.realmLevel, cult.stage);
+                });
+                const rank = getRankInfo(currentTotalScore);
+                
+                return (
+                    <div style={{
+                        background: 'linear-gradient(135deg, #f8fafc 0%, #eff6ff 100%)',
+                        border: `1px solid ${rank.color}40`,
+                        borderRadius: 16,
+                        padding: '16px',
+                        marginBottom: 16,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+                        flexShrink: 0
+                    }}>
+                        <div style={{fontSize: '0.85rem', color: '#64748b', marginBottom: 4}}>当前诸天总战力</div>
+                        <div style={{fontSize: '2rem', fontWeight: 800, color: rank.color, lineHeight: 1, marginBottom: 4}}>
+                            {rank.title} <span style={{fontSize: '1.2rem', opacity: 0.8}}>{rank.subRank}</span>
+                        </div>
+                        {/* 星星展示 */}
+                        <div style={{display: 'flex', gap: 4, marginBottom: 8}}>
+                            {[0,1,2,3,4].map(i => (
+                                <Star key={i} size={16} 
+                                      fill={i < rank.stars ? rank.color : 'none'} 
+                                      color={rank.color} 
+                                      style={{opacity: i < rank.stars ? 1 : 0.3}} />
+                            ))}
+                        </div>
+                        <div style={{fontSize: '0.8rem', color: '#94a3b8', background: '#fff', padding: '2px 10px', borderRadius: 10, border: '1px solid #e2e8f0'}}>
+                            总评分: {currentTotalScore}
+                        </div>
+                    </div>
+                );
+            })()}
+
+            {/* 滚动容器 */}
             <div style={{ 
                 overflowY: 'auto', 
                 flex: 1, 
@@ -4095,40 +4190,105 @@ const saveResults = (overrideTrials?: number) => {
                 gap: 12
             }}>
               {(() => {
-                const dayMap = new Map();
-                
-                // 遍历所有模式进行聚合
+                // --- 核心逻辑：回溯每一天的总分状态 ---
+                // 1. 收集所有模式的所有记录
+                let allRecords: (GameResult & { modeKey: string })[] = [];
                 Object.keys(masterData.modes).forEach(mKey => {
-                  const modeHistory = masterData.modes[mKey].history || [];
-                  modeHistory.forEach((run: GameResult) => {
+                    const modeHistory = masterData.modes[mKey].history || [];
+                    modeHistory.forEach((r: GameResult) => {
+                        allRecords.push({ ...r, modeKey: mKey });
+                    });
+                });
+                
+                // 2. 按时间排序
+                allRecords.sort((a, b) => a.timestamp - b.timestamp);
+                
+                // 3. 模拟状态机
+                // 记录每个模式当前的 {realm, stage}
+                const currentStatus: Record<string, {r: number, s: number}> = {
+                    memorize: {r: 1, s: 0},
+                    intuition: {r: 1, s: 0},
+                    technique: {r: 1, s: 0},
+                    score: {r: 1, s: 0}
+                };
+                
+                // 4. 按天聚合数据，同时更新状态
+                const dayGroups = new Map<string, { 
+                    totalTime: number, 
+                    modes: any, 
+                    rankAtEnd: any // 记录当天的段位
+                }>();
+                
+                allRecords.forEach(run => {
                     const dStr = new Date(run.timestamp).toLocaleDateString('zh-CN');
-                    if (!dayMap.has(dStr)) dayMap.set(dStr, { totalTime: 0, modes: {} });
                     
-                    const dData = dayMap.get(dStr);
+                    // 更新该模式的状态为这局游戏结束后的状态
+                    currentStatus[run.modeKey] = {
+                        r: run.afterRealmLevel ?? run.realmLevel,
+                        s: run.afterStage ?? run.stage
+                    };
+                    
+                    if (!dayGroups.has(dStr)) {
+                        dayGroups.set(dStr, { totalTime: 0, modes: {}, rankAtEnd: null });
+                    }
+                    
+                    const dData = dayGroups.get(dStr)!;
                     const rTime = run.sessionDuration || (run.totalTrials * (run.interval || 1));
                     dData.totalTime += rTime;
                     
-                    if (!dData.modes[mKey]) dData.modes[mKey] = { time: 0, startRun: run, endRun: run };
-                    const mData = dData.modes[mKey];
+                    // 记录模式明细
+                    if (!dData.modes[run.modeKey]) dData.modes[run.modeKey] = { time: 0, startRun: run, endRun: run };
+                    const mData = dData.modes[run.modeKey];
                     mData.time += rTime;
-                    // 记录这一天中该模式的第一局和最后一局
+                    // 更新起止
                     if (run.timestamp < mData.startRun.timestamp) mData.startRun = run;
                     if (run.timestamp > mData.endRun.timestamp) mData.endRun = run;
-                  });
+                    
+                    // 计算这一刻的总分 (每次循环都算一次有点浪费，但这能保证准确)
+                    // 优化：只在每一天处理完后再算，或者每次记录覆盖
+                    // 这里我们为了简单，在这一天所有的记录遍历完后，取最后的状态算一次即可。
+                    // 但因为我们是线性的，所以我们可以在每一条记录处理时都计算一下"当前分"，但只保留最后的。
+                    let scoreSum = 0;
+                    Object.values(currentStatus).forEach(st => {
+                        scoreSum += getModeScore(st.r, st.s);
+                    });
+                    dData.rankAtEnd = getRankInfo(scoreSum);
                 });
                 
-                const sortedDays = Array.from(dayMap.entries()).sort((a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime());
+                // 倒序显示 (最近的在上面)
+                const sortedDays = Array.from(dayGroups.entries()).sort((a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime());
                 
                 if (sortedDays.length === 0) return <div style={{textAlign: 'center', color: '#94a3b8', padding: 40}}>大道无痕，暂无修炼记录</div>;
 
                 return sortedDays.map(([dateStr, dData]) => (
                   <div key={dateStr} style={{ border: '1px solid #bae6fd', borderRadius: 12, overflow: 'hidden', flexShrink: 0 }}>
-                    {/* 日期标题 */}
+                    {/* 日期标题 + 当天段位 */}
                     <div style={{ background: '#f0f9ff', padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #bae6fd' }}>
-                      <span style={{ fontWeight: 700, color: '#0c4a6e', display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <Calendar size={14} /> {dateStr}
-                      </span>
-                      <span style={{ color: '#0284c7', fontSize: '0.85rem', fontWeight: 600 }}>今日总修: {formatDuration(dData.totalTime)}</span>
+                      <div style={{display:'flex', alignItems:'center', gap:8}}>
+                          <span style={{ fontWeight: 700, color: '#0c4a6e', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <Calendar size={14} /> {dateStr}
+                          </span>
+                          {/* 当日段位徽章 */}
+                          {dData.rankAtEnd && (
+                              <div style={{
+                                  fontSize: '0.7rem', 
+                                  color: dData.rankAtEnd.color, 
+                                  background: '#fff', 
+                                  border: `1px solid ${dData.rankAtEnd.color}40`,
+                                  padding: '1px 6px',
+                                  borderRadius: 8,
+                                  fontWeight: 700,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 2
+                              }}>
+                                  {dData.rankAtEnd.title} {dData.rankAtEnd.subRank}
+                                  <Star size={8} fill={dData.rankAtEnd.color} strokeWidth={0} />
+                                  {dData.rankAtEnd.stars}
+                              </div>
+                          )}
+                      </div>
+                      <span style={{ color: '#0284c7', fontSize: '0.85rem', fontWeight: 600 }}>修: {formatDuration(dData.totalTime)}</span>
                     </div>
                     
                     {/* 模式明细 */}
