@@ -1616,38 +1616,52 @@ const Game = () => {
       try {
           const data = JSON.parse(ev.target?.result as string);
           
-          if (data.modes && data.gachaState) {
-              // 1. 如果是“大 JSON”（包含 modes 字段），一次性覆盖所有模式！
+          // --- 判定逻辑开始 ---
+
+          // 情况 A：新版大 JSON (包含所有模式)
+          if (data.modes && typeof data.modes === 'object') {
               setMasterData(data);
-              alert('天道多模式数据（完整存档）导入成功！');
-          } else if (data.history && data.cultivation) {
-              // 2. 如果是“老版单模式存档”，只注入当前选中的模式
-              setMasterData(prev => ({
-                  ...prev,
-                  modes: {
+              alert('成功！检测到全量天道存档，所有模式数据已同步。');
+          } 
+          
+          // 情况 B：旧版单模式 JSON (只包含历史、修为等)
+          else if (data.history || data.cultivation) {
+              setMasterData(prev => {
+                  // 仅更新当前活跃的模式，其他模式保持不动
+                  const updatedModes = {
                       ...prev.modes,
                       [activeMode]: {
-                          ...prev.modes[activeMode],
-                          history: data.history,
-                          cultivation: data.cultivation,
-                          milestones: data.milestones ||[],
-                          inventory: data.inventory ||[],
-                          settings: { ...prev.modes[activeMode].settings, ...(data.settings || {}) },
+                          ...DEFAULT_MODE_DATA, // 使用默认值兜底缺失字段
+                          history: data.history || [],
+                          cultivation: data.cultivation || DEFAULT_MODE_DATA.cultivation,
+                          milestones: data.milestones || [],
+                          inventory: data.inventory || [],
+                          settings: { ...DEFAULT_MODE_DATA.settings, ...(data.settings || {}) },
                           savedWeightsMap: data.savedWeightsMap || {}
                       }
-                  },
-                  gachaState: {
-                      accumulatedTime: Math.max(prev.gachaState.accumulatedTime, data.gachaState?.accumulatedTime || 0),
-                      availableDraws: Math.max(prev.gachaState.availableDraws, data.gachaState?.availableDraws || 0)
-                  }
-              }));
-              alert(`已成功将老存档无损注入至【${MODE_LABELS[activeMode]}】模式！`);
-          } else {
-              alert('存档文件格式不符！');
+                  };
+
+                  return {
+                      ...prev,
+                      modes: updatedModes,
+                      // 全局真火进度取两者的最大值，确保不回退
+                      gachaState: {
+                          accumulatedTime: Math.max(prev.gachaState.accumulatedTime, data.gachaState?.accumulatedTime || 0),
+                          availableDraws: Math.max(prev.gachaState.availableDraws, data.gachaState?.availableDraws || 0)
+                      }
+                  };
+              });
+              alert(`成功！已将此存档注入至当前的【${MODE_LABELS[activeMode]}】模式。`);
+          } 
+          
+          else {
+              alert('读取失败：此文件不像是有效的修仙存档。');
           }
       } catch (err) {
-          alert('存档文件解析失败，请检查文件是否完整');
+          alert('解析失败：文件可能损坏或格式不正确。');
       }
+      
+      // 重置 input 以便下次还能选同一个文件
       if (fileInputRef.current) fileInputRef.current.value = '';
     };
     reader.readAsText(file);
