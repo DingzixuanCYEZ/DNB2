@@ -3626,7 +3626,7 @@ const saveResults = (overrideTrials?: number) => {
                   if (sortedDays.length === 0) return <div style={{textAlign:'center', color:'#94a3b8', padding: 30}}>大道无痕，暂无修炼记录</div>;
                   
                   return sortedDays.map(([dateStr, dData]) => (
-                      <div key={dateStr} style={{border: '1px solid #bae6fd', borderRadius: 12, overflow: 'hidden', boxShadow: '0 2px 4px rgba(0,0,0,0.02)'}}>
+                      <div key={dateStr} style={{border: '1px solid #bae6fd', borderRadius: 12, overflow: 'hidden', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', marginBottom: 12}}>
                           <div style={{background: '#f0f9ff', padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #bae6fd'}}>
                               <span style={{fontWeight: 700, color: '#0c4a6e', display: 'flex', alignItems: 'center', gap: 6}}>
                                   <Calendar size={14} /> {dateStr}
@@ -3642,7 +3642,7 @@ const saveResults = (overrideTrials?: number) => {
                                   return (
                                       <div key={mKey} style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem'}}>
                                           <span style={{display: 'flex', alignItems: 'center', gap: 8}}>
-                                              <span style={{background: '#f1f5f9', color: '#475569', padding: '2px 8px', borderRadius: 12, fontSize: '0.75rem', fontWeight: 600, width: 56, textAlign: 'center'}}>
+                                              <span style={{background: '#f1f5f9', color: '#475569', padding: '2px 8px', borderRadius: 12, fontSize: '0.75rem', fontWeight: 600, width: 64, textAlign: 'center'}}>
                                                   {MODE_LABELS[mKey as PlayMode]}
                                               </span>
                                               <span style={{color: '#64748b'}}>{formatDuration(mData.time)}</span>
