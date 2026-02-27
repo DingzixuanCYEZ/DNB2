@@ -3715,6 +3715,10 @@ const saveResults = (overrideTrials?: number) => {
                                 </div>
                             );
                         })()}
+                    </div> {/* <--- 就是漏了这一个闭合标签！ */}
+
+                    {/* --- 炼制操作区 --- */}
+                    <div style={{background: '#f8fafc', padding: 16, borderRadius: 12, border: '1px solid #e2e8f0', marginBottom: 24}}>
 
                     {/* --- 炼制操作区 --- */}
                     <div style={{background: '#f8fafc', padding: 16, borderRadius: 12, border: '1px solid #e2e8f0', marginBottom: 24}}>
