@@ -17,7 +17,7 @@ type PlayMode = 'memorize' | 'intuition' | 'technique' | 'score';
 const MODE_LABELS: Record<PlayMode, string> = {
     memorize: '强记',
     intuition: '直觉',
-    technique: '良心技巧',
+    technique: '良性技巧',
     score: '刷分'
 };
 // 丹药类型
