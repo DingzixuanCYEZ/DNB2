@@ -3719,9 +3719,6 @@ const saveResults = (overrideTrials?: number) => {
 
                     {/* --- 炼制操作区 --- */}
                     <div style={{background: '#f8fafc', padding: 16, borderRadius: 12, border: '1px solid #e2e8f0', marginBottom: 24}}>
-
-                    {/* --- 炼制操作区 --- */}
-                    <div style={{background: '#f8fafc', padding: 16, borderRadius: 12, border: '1px solid #e2e8f0', marginBottom: 24}}>
                         <div style={{fontSize: '0.9rem', fontWeight: 600, marginBottom: 12, color: '#475569'}}>研习丹方</div>
                         
                         {/* 丹药大类选择 */}
