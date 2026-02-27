@@ -1592,19 +1592,13 @@ const Game = () => {
 
 
   const handleExportData = () => {
-    const data = {
-      history,
-      cultivation,
-      milestones,
-      inventory,
-      gachaState,
-      savedWeightsMap
-    };
-    const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+    // 【修改】：不再提取局部变量，直接导出整个 masterData 对象
+    const blob = new Blob([JSON.stringify(masterData)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `dualn-back-${formatDateForFilename(Date.now())}.json`;
+    // 文件名加上 MASTER 标识，方便区分
+    a.download = `dualn-back-MASTER-${formatDateForFilename(Date.now())}.json`;
     a.click();
   };
 
@@ -3711,82 +3705,100 @@ const saveResults = (overrideTrials?: number) => {
       {/* Global Comprehensive History Modal */}
       {showGlobalHistory && (
         <div className="modal-overlay" onClick={() => setShowGlobalHistory(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()} style={{maxHeight: '90vh', display: 'flex', flexDirection: 'column'}}>
-            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexShrink: 0}}>
-              <h2 style={{margin: 0, fontSize: '1.25rem', color: '#0369a1', display: 'flex', alignItems: 'center', gap: 6}}>
-                  <Activity size={20} /> 诸天综合卷宗
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ 
+              maxHeight: '85vh', 
+              display: 'flex', 
+              flexDirection: 'column',
+              padding: '20px 16px' 
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexShrink: 0 }}>
+              <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#0369a1', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Activity size={22} /> 诸天综合卷宗
               </h2>
-              <button style={{background: 'none', border: 'none', color: '#64748b', cursor: 'pointer'}} onClick={() => setShowGlobalHistory(false)}><X /></button>
+              <button style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }} onClick={() => setShowGlobalHistory(false)}>
+                <X size={24} />
+              </button>
             </div>
-            <div style={{overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12, paddingRight: 4}}>
+
+            {/* 增加显式的滚动容器 */}
+            <div style={{ 
+                overflowY: 'auto', 
+                flex: 1, 
+                paddingRight: '4px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12
+            }}>
               {(() => {
-                  const dayMap = new Map();
-                  Object.keys(masterData.modes).forEach(mKey => {
-                      masterData.modes[mKey].history.forEach((run: GameResult) => {
-                          const dStr = new Date(run.timestamp).toLocaleDateString('zh-CN');
-                          if (!dayMap.has(dStr)) dayMap.set(dStr, { totalTime: 0, modes: {} });
-                          const dData = dayMap.get(dStr);
-                          const rTime = run.sessionDuration || (run.totalTrials * run.interval);
-                          dData.totalTime += rTime;
-                          
-                          if (!dData.modes[mKey]) dData.modes[mKey] = { time: 0, startRun: run, endRun: run };
-                          const mData = dData.modes[mKey];
-                          mData.time += rTime;
-                          if (run.timestamp < mData.startRun.timestamp) mData.startRun = run;
-                          if (run.timestamp > mData.endRun.timestamp) mData.endRun = run;
-                      });
+                const dayMap = new Map();
+                
+                // 遍历所有模式进行聚合
+                Object.keys(masterData.modes).forEach(mKey => {
+                  const modeHistory = masterData.modes[mKey].history || [];
+                  modeHistory.forEach((run: GameResult) => {
+                    const dStr = new Date(run.timestamp).toLocaleDateString('zh-CN');
+                    if (!dayMap.has(dStr)) dayMap.set(dStr, { totalTime: 0, modes: {} });
+                    
+                    const dData = dayMap.get(dStr);
+                    const rTime = run.sessionDuration || (run.totalTrials * (run.interval || 1));
+                    dData.totalTime += rTime;
+                    
+                    if (!dData.modes[mKey]) dData.modes[mKey] = { time: 0, startRun: run, endRun: run };
+                    const mData = dData.modes[mKey];
+                    mData.time += rTime;
+                    // 记录这一天中该模式的第一局和最后一局
+                    if (run.timestamp < mData.startRun.timestamp) mData.startRun = run;
+                    if (run.timestamp > mData.endRun.timestamp) mData.endRun = run;
                   });
-                  
-                  const sortedDays = Array.from(dayMap.entries()).sort((a,b) => new Date(b[0]).getTime() - new Date(a[0]).getTime());
-                  if (sortedDays.length === 0) return <div style={{textAlign:'center', color:'#94a3b8', padding: 30}}>大道无痕，暂无修炼记录</div>;
-                  
-                  return sortedDays.map(([dateStr, dData]) => (
-                      <div key={dateStr} style={{border: '1px solid #bae6fd', borderRadius: 12, overflow: 'hidden', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', marginBottom: 12}}>
-                          {/* 标题栏 */}
-                          <div style={{background: '#f0f9ff', padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #bae6fd'}}>
-                              <span style={{fontWeight: 700, color: '#0c4a6e', display: 'flex', alignItems: 'center', gap: 6}}>
-                                  <Calendar size={14} /> {dateStr}
-                              </span>
-                              <span style={{color: '#0284c7', fontSize: '0.85rem', fontWeight: 600}}>总修: {formatDuration(dData.totalTime)}</span>
-                          </div>
-                          
-                          {/* 内容栏（修复了不显示的问题） */}
-                          {Object.keys(dData.modes).length > 0 && (
-                              <div style={{padding: '10px 12px', background: 'white', display: 'flex', flexDirection: 'column', gap: 10}}>
-                                  {Object.keys(dData.modes).map(mKey => {
-                                      const mData = dData.modes[mKey];
-                                      const sRun = mData.startRun;
-                                      const eRun = mData.endRun;
-                                      
-                                      // 兼容某些模式可能没有记录 beforeXP 的情况
-                                      const sXP = sRun.beforeXP !== undefined ? sRun.beforeXP : sRun.score;
-                                      const eXP = eRun.afterXP !== undefined ? eRun.afterXP : eRun.score;
+                });
+                
+                const sortedDays = Array.from(dayMap.entries()).sort((a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime());
+                
+                if (sortedDays.length === 0) return <div style={{textAlign: 'center', color: '#94a3b8', padding: 40}}>大道无痕，暂无修炼记录</div>;
 
-                                      const progressStr = formatProgressChange(
-                                          sRun.realmLevel, sRun.stage, sXP, 
-                                          eRun.afterRealmLevel ?? eRun.realmLevel, eRun.afterStage ?? eRun.stage, eXP, 
-                                          'percent'
-                                      );
+                return sortedDays.map(([dateStr, dData]) => (
+                  <div key={dateStr} style={{ border: '1px solid #bae6fd', borderRadius: 12, overflow: 'hidden', flexShrink: 0 }}>
+                    {/* 日期标题 */}
+                    <div style={{ background: '#f0f9ff', padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #bae6fd' }}>
+                      <span style={{ fontWeight: 700, color: '#0c4a6e', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <Calendar size={14} /> {dateStr}
+                      </span>
+                      <span style={{ color: '#0284c7', fontSize: '0.85rem', fontWeight: 600 }}>今日总修: {formatDuration(dData.totalTime)}</span>
+                    </div>
+                    
+                    {/* 模式明细 */}
+                    <div style={{ padding: '8px 12px', background: 'white', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {Object.keys(dData.modes).map(mKey => {
+                        const mData = dData.modes[mKey];
+                        const sRun = mData.startRun;
+                        const eRun = mData.endRun;
+                        
+                        // 计算进度文字
+                        const progText = formatProgressChange(
+                          sRun.realmLevel, sRun.stage, sRun.beforeXP,
+                          eRun.afterRealmLevel ?? eRun.realmLevel, eRun.afterStage ?? eRun.stage, eRun.afterXP,
+                          'percent'
+                        );
 
-                                      return (
-                                          <div key={mKey} style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem'}}>
-                                              <span style={{display: 'flex', alignItems: 'center', gap: 8}}>
-                                                  {/* 修正了显示长度和背景颜色 */}
-                                                  <span style={{background: '#f1f5f9', color: '#475569', padding: '4px 8px', borderRadius: 6, fontSize: '0.75rem', fontWeight: 600, minWidth: 60, textAlign: 'center'}}>
-                                                      {MODE_LABELS[mKey as PlayMode]}
-                                                  </span>
-                                                  <span style={{color: '#64748b', fontWeight: 500}}>{formatDuration(mData.time)}</span>
-                                              </span>
-                                              <span style={{color: '#0ea5e9', fontWeight: 600, background: '#f0f9ff', padding: '2px 6px', borderRadius: 4}}>
-                                                  {progressStr}
-                                              </span>
-                                          </div>
-                                      );
-                                  })}
+                        return (
+                          <div key={mKey} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', fontSize: '0.85rem' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span style={{ background: '#f1f5f9', color: '#475569', padding: '2px 6px', borderRadius: 6, fontSize: '0.7rem', fontWeight: 700, width: 56, textAlign: 'center' }}>
+                                  {MODE_LABELS[mKey as PlayMode]}
+                                </span>
+                                <span style={{ color: '#1e293b', fontWeight: 600 }}>{formatDuration(mData.time)}</span>
                               </div>
-                          )}
-                      </div>
-                  ));
+                            </div>
+                            <div style={{ color: '#0ea5e9', fontWeight: 600, fontSize: '0.8rem', textAlign: 'right', maxWidth: '60%' }}>
+                              {progText}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ));
               })()}
             </div>
           </div>
