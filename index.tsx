@@ -53,7 +53,8 @@ interface StackedPill extends Pill {
 
 interface GachaState {
   accumulatedTime: number; // 累计秒数
-  availableDraws: number;
+  fires: { spirit: number; focus: number; foundation: number; preservation: number; heavenly: number }; // 各类真火数量
+  selectedFireTypes: PillType[]; // 当前勾选的真火偏好
 }
 
 type RoundMode = 'standard' | 'linear' | 'custom';
@@ -811,6 +812,15 @@ const styles = `
 `;
 
 // --- Helpers ---
+// --- 真火凝聚效率计算 ---
+function getFireReqTime(selectedCount: number): number {
+    if (selectedCount >= 5) return 300; // 5种: 5分钟
+    if (selectedCount === 4) return 360; // 4种: 6分钟
+    if (selectedCount === 3) return 420; // 3种: 7分钟
+    if (selectedCount === 2) return 540; // 2种: 9分钟
+    if (selectedCount === 1) return 720; // 1种: 12分钟
+    return 300; // 兜底
+}
 // --- 绝对等级转换 (用于凝神/护基丹) ---
 function getPillFromAbsoluteIndex(index: number) {
     // 限制最低为 6 (锻体前期虚品)
@@ -1454,10 +1464,29 @@ const Game = () => {
   const [masterData, setMasterData] = useState(() => {
       try {
           const s = localStorage.getItem('dual-n-back-master-v2');
-          if (s) return JSON.parse(s);
+          if (s) {
+              const parsed = JSON.parse(s);
+              // 【向下兼容】将老版本的 availableDraws 转换为 spirit (灵元) 真火
+              if (parsed.gachaState && typeof parsed.gachaState.availableDraws === 'number') {
+                  parsed.gachaState = {
+                      accumulatedTime: parsed.gachaState.accumulatedTime || 0,
+                      fires: { spirit: parsed.gachaState.availableDraws, focus: 0, foundation: 0, preservation: 0, heavenly: 0 },
+                      selectedFireTypes:['spirit', 'focus', 'foundation', 'preservation', 'heavenly']
+                  };
+                  delete parsed.gachaState.availableDraws;
+              } else if (parsed.gachaState && !parsed.gachaState.fires) {
+                  parsed.gachaState.fires = { spirit: 0, focus: 0, foundation: 0, preservation: 0, heavenly: 0 };
+                  parsed.gachaState.selectedFireTypes =['spirit', 'focus', 'foundation', 'preservation', 'heavenly'];
+              }
+              return parsed;
+          }
       } catch(e) {}
       return {
-          gachaState: { accumulatedTime: 0, availableDraws: 0 },
+          gachaState: { 
+              accumulatedTime: 0, 
+              fires: { spirit: 0, focus: 0, foundation: 0, preservation: 0, heavenly: 0 },
+              selectedFireTypes: ['spirit', 'focus', 'foundation', 'preservation', 'heavenly']
+          },
           modes: {
               memorize: JSON.parse(JSON.stringify(DEFAULT_MODE_DATA)),
               intuition: JSON.parse(JSON.stringify(DEFAULT_MODE_DATA)),
@@ -1943,13 +1972,22 @@ const saveResults = (overrideTrials?: number) => {
     const acquiredPills: Pill[] = [];
     const acquireLogs: string[] = [];
     
-    // Gacha Accumulation
+    // Gacha Accumulation (真火凝聚)
     const newGachaState = { ...gachaState };
+    // 容错兜底
+    if (!newGachaState.fires) newGachaState.fires = { spirit: 0, focus: 0, foundation: 0, preservation: 0, heavenly: 0 };
+    if (!newGachaState.selectedFireTypes) newGachaState.selectedFireTypes =['spirit', 'focus', 'foundation', 'preservation', 'heavenly'];
+    
     newGachaState.accumulatedTime += sessionTime;
-    const addedDraws = Math.floor(newGachaState.accumulatedTime / 600);
-    if (addedDraws > 0) {
-       newGachaState.availableDraws += addedDraws;
-       newGachaState.accumulatedTime %= 600;
+    const reqTime = getFireReqTime(newGachaState.selectedFireTypes.length);
+
+    // 只要时间满足，就不断产出真火
+    while (newGachaState.accumulatedTime >= reqTime) {
+        newGachaState.accumulatedTime -= reqTime;
+        // 在选定的类型中随机掉落一种
+        const validTypes = newGachaState.selectedFireTypes;
+        const picked = validTypes[Math.floor(Math.random() * validTypes.length)] as PillType;
+        newGachaState.fires[picked] = (newGachaState.fires[picked] || 0) + 1;
     }
     setGachaState(newGachaState);
 
@@ -2539,7 +2577,7 @@ const saveResults = (overrideTrials?: number) => {
   };
   
   const handleGachaDraw = () => {
-    if (gachaState.availableDraws <= 0) return;
+    if (!gachaState.fires || (gachaState.fires[gachaTargetType] || 0) <= 0) return;
     
     const r = Math.random();
     let isSuccess = false;
@@ -2650,8 +2688,13 @@ const saveResults = (overrideTrials?: number) => {
     }
     
     // 扣除真火
-    setGachaState(prev => ({...prev, availableDraws: prev.availableDraws - 1}));
-
+    setGachaState(prev => ({
+        ...prev,
+        fires: {
+            ...prev.fires,
+            [gachaTargetType]: prev.fires[gachaTargetType] - 1
+        }
+    }));
     if (isSuccess) {
         const newPill: Pill = {
             id: Date.now().toString(),
@@ -3550,16 +3593,74 @@ const saveResults = (overrideTrials?: number) => {
                     </button>
                 </div>
                 
-                <div style={{textAlign: 'center', padding: '10px 0'}}>
-                    <Gift size={48} color="#7c3aed" style={{marginBottom: 10}} />
-                    <div style={{fontSize: '0.9rem', marginBottom: 20}}>
-                        剩余真火: <span style={{color: '#7c3aed', fontWeight: 700}}>{gachaState.availableDraws}</span> 次
-                        <div style={{fontSize: '0.75rem', color: '#64748b', marginTop: 4}}>
-                            每专注修炼 10 分钟积累一次真火<br/>
-                            当前进度: {(gachaState.accumulatedTime / 60).toFixed(1)} / 10.0 分钟
+                <div style={{padding: '10px 0'}}>
+                    {/* --- 真火库存概览 --- */}
+                    <div style={{display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', marginBottom: 20}}>
+                        {[
+                            {id: 'spirit', label: '灵元真火', color: '#3b82f6'},
+                            {id: 'focus', label: '凝神真火', color: '#d946ef'},
+                            {id: 'foundation', label: '护基真火', color: '#16a34a'},
+                            {id: 'preservation', label: '保元真火', color: '#ea580c'},
+                            {id: 'heavenly', label: '通天真火', color: '#9a3412'}
+                        ].map(t => (
+                            <div key={t.id} style={{background: '#f8fafc', padding: '6px 10px', borderRadius: 8, border: `1px solid ${t.color}40`, fontSize: '0.8rem', color: '#475569'}}>
+                                {t.label}: <span style={{fontWeight: 800, color: t.color, marginLeft: 4}}>{(gachaState.fires || {})[t.id as PillType] || 0}</span>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* --- 天地熔炉：真火凝聚设置 --- */}
+                    <div style={{background: '#fffbeb', padding: 16, borderRadius: 12, border: '1px solid #fde68a', marginBottom: 24}}>
+                        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12}}>
+                            <span style={{fontSize: '0.9rem', fontWeight: 700, color: '#b45309'}}>天地熔炉 (真火牵引)</span>
+                            <span style={{fontSize: '0.8rem', color: '#d97706', fontWeight: 600}}>
+                                效率: {getFireReqTime((gachaState.selectedFireTypes ||[]).length) / 60} 分钟 / 朵
+                            </span>
+                        </div>
+                        <div style={{display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12, justifyContent: 'center'}}>
+                            {[
+                                {id: 'spirit', label: '灵元'}, {id: 'focus', label: '凝神'}, 
+                                {id: 'foundation', label: '护基'}, {id: 'preservation', label: '保元'}, 
+                                {id: 'heavenly', label: '通天'}
+                            ].map(t => {
+                                const isActive = (gachaState.selectedFireTypes ||[]).includes(t.id as PillType);
+                                return (
+                                    <button
+                                        key={t.id}
+                                        onClick={() => {
+                                            setGachaState((prev: any) => {
+                                                const sel = prev.selectedFireTypes || ['spirit', 'focus', 'foundation', 'preservation', 'heavenly'];
+                                                if (sel.includes(t.id)) {
+                                                    if (sel.length <= 1) { alert("天道无常，但熔炉不可熄灭（至少保留一种真火）。"); return prev; }
+                                                    return { ...prev, selectedFireTypes: sel.filter((x: string) => x !== t.id) };
+                                                } else {
+                                                    return { ...prev, selectedFireTypes: [...sel, t.id] };
+                                                }
+                                            });
+                                        }}
+                                        style={{
+                                            padding: '4px 12px', borderRadius: '16px', border: '1px solid',
+                                            borderColor: isActive ? '#f59e0b' : '#cbd5e1',
+                                            background: isActive ? '#fffbeb' : '#f1f5f9',
+                                            color: isActive ? '#b45309' : '#94a3b8',
+                                            fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        {t.label}
+                                    </button>
+                                )
+                            })}
+                        </div>
+                        {/* 进度条 */}
+                        <div style={{height: 6, background: '#fef3c7', borderRadius: 3, overflow: 'hidden', marginBottom: 4}}>
+                            <div style={{height: '100%', background: 'linear-gradient(90deg, #f59e0b, #ef4444)', width: `${((gachaState.accumulatedTime || 0) / getFireReqTime((gachaState.selectedFireTypes ||[]).length)) * 100}%`, transition: 'width 0.3s'}} />
+                        </div>
+                        <div style={{fontSize: '0.7rem', color: '#d97706', textAlign: 'right'}}>
+                            进度: {(gachaState.accumulatedTime / 60).toFixed(1)} / {getFireReqTime((gachaState.selectedFireTypes ||[]).length) / 60}m
                         </div>
                     </div>
 
+                    {/* --- 炼制操作区 --- */}
                     <div style={{background: '#f8fafc', padding: 16, borderRadius: 12, border: '1px solid #e2e8f0', marginBottom: 24}}>
                         <div style={{fontSize: '0.9rem', fontWeight: 600, marginBottom: 12, color: '#475569'}}>研习丹方</div>
                         
@@ -3588,8 +3689,11 @@ const saveResults = (overrideTrials?: number) => {
 
                         {/* --- 动态渲染每种丹药的配置与概率 --- */}
                         {(() => {
+                            const userSub = userStageToSubIndex(cultivation.stage);
+                            const uli = cultivation.realmLevel * 6 + userSub * 2;
+                            const subNames =['前期', '中期', '后期', '圆满', '大圆满'];
+
                             if (gachaTargetType === 'spirit') {
-                                const userSub = userStageToSubIndex(cultivation.stage);
                                 const uBase = calculateBaseScore(cultivation.realmLevel, userSub);
                                 const pBase = calculateBaseScore(gachaTargetRealm, gachaTargetSub);
                                 const variance = Math.max(1, uBase / pBase) * 1.5;
@@ -3617,8 +3721,6 @@ const saveResults = (overrideTrials?: number) => {
                                     </>
                                 );
                             }
-
-                            // ... （灵元丹保持不变）
 
                             if (gachaTargetType === 'focus') {
                                 return (
@@ -3660,13 +3762,11 @@ const saveResults = (overrideTrials?: number) => {
                             }
 
                             if (gachaTargetType === 'preservation') {
-                                // 【对齐逻辑】考虑使用者的小境界系数
                                 const userSub = userStageToSubIndex(cultivation.stage);
                                 const uBase = getRealmBaseCoeff(userSub) * Math.pow(10, cultivation.realmLevel);
-                                const pBase = 1 * Math.pow(10, gachaTargetRealm); // 目标N的基准
-                                
+                                const pBase = 1 * Math.pow(10, gachaTargetRealm); 
                                 const ratio = uBase / pBase;
-                                const variance = ratio * 1.5;
+                                const variance = Math.max(0.1, ratio) * 1.5;
                                 const probs = calculatePreservationProbs(variance);
                                 
                                 return (
@@ -3674,7 +3774,6 @@ const saveResults = (overrideTrials?: number) => {
                                         <div style={{display: 'flex', gap: 12, justifyContent: 'center', marginBottom: 16}}>
                                             <span style={{fontSize: '0.85rem', alignSelf: 'center'}}>炼制 N =</span>
                                             <select value={gachaTargetRealm} onChange={e => setGachaTargetRealm(parseInt(e.target.value))} style={{padding: '6px 12px', borderRadius: 8, border: '1px solid #cbd5e1', outline: 'none', fontWeight: 600, background: 'white'}}>
-                                                {/* 允许选择到 自身大境界 + 2 */}
                                                 {Array.from({length: cultivation.realmLevel + 2}).map((_, i) => (
                                                     <option key={i+1} value={i+1}>{i+1} ({REALMS[i+1] || '未知'})</option>
                                                 ))}
@@ -3700,16 +3799,17 @@ const saveResults = (overrideTrials?: number) => {
                             }
 
                             if (gachaTargetType === 'heavenly') {
+                                const probs = getHeavenlyProbs();
                                 return (
                                     <>
                                         <div style={{marginBottom: 16, fontWeight: 700, color: '#9a3412', background: '#ffedd5', padding: '8px', borderRadius: 8}}>
                                             目标: {REALMS[cultivation.realmLevel + 1]}·通天渡厄丹
                                         </div>
                                         <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6}}>
-                                            <div style={{background: '#fee2e2', padding: '8px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#b91c1c'}}>炸炉</div><div style={{fontWeight: 800, color: '#991b1b'}}>70%</div></div>
-                                            <div style={{background: '#f1f5f9', padding: '8px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#64748b'}}>人品</div><div style={{fontWeight: 800, color: '#334155'}}>20%</div></div>
-                                            <div style={{background: '#e0f2fe', padding: '8px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#0369a1'}}>地品</div><div style={{fontWeight: 800, color: '#0284c7'}}>8%</div></div>
-                                            <div style={{background: '#fffbeb', padding: '8px 0', borderRadius: 6, border: '1px solid #fcd34d'}}><div style={{fontSize: '0.7rem', color: '#b45309'}}>天品</div><div style={{fontWeight: 800, color: '#d97706'}}>2%</div></div>
+                                            <div style={{background: '#fee2e2', padding: '8px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#b91c1c'}}>炸炉</div><div style={{fontWeight: 800, color: '#991b1b'}}>{(probs.fail * 100).toFixed(0)}%</div></div>
+                                            <div style={{background: '#f1f5f9', padding: '8px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#64748b'}}>人品</div><div style={{fontWeight: 800, color: '#334155'}}>{(probs.human * 100).toFixed(0)}%</div></div>
+                                            <div style={{background: '#e0f2fe', padding: '8px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#0369a1'}}>地品</div><div style={{fontWeight: 800, color: '#0284c7'}}>{(probs.earth * 100).toFixed(0)}%</div></div>
+                                            <div style={{background: '#fffbeb', padding: '8px 0', borderRadius: 6, border: '1px solid #fcd34d'}}><div style={{fontSize: '0.7rem', color: '#b45309'}}>天品</div><div style={{fontWeight: 800, color: '#d97706'}}>{(probs.heaven * 100).toFixed(0)}%</div></div>
                                         </div>
                                         <div style={{fontSize: '0.7rem', color: '#94a3b8', marginTop: 12}}>极易遭受天谴炸炉。成功后随机赋予天地人三品。</div>
                                     </>
@@ -3720,11 +3820,11 @@ const saveResults = (overrideTrials?: number) => {
                     
                     <button 
                         className="btn btn-primary" 
-                        style={{width: '80%', margin: '0 auto', justifyContent: 'center', padding: 14, background: gachaState.availableDraws > 0 ? '#7c3aed' : '#cbd5e1', cursor: gachaState.availableDraws > 0 ? 'pointer' : 'not-allowed'}}
+                        style={{width: '80%', margin: '0 auto', justifyContent: 'center', padding: 14, background: (gachaState.fires || {})[gachaTargetType] > 0 ? '#7c3aed' : '#cbd5e1', cursor: (gachaState.fires || {})[gachaTargetType] > 0 ? 'pointer' : 'not-allowed'}}
                         onClick={handleGachaDraw}
-                        disabled={gachaState.availableDraws <= 0}
+                        disabled={(gachaState.fires || {})[gachaTargetType] <= 0}
                     >
-                        {gachaState.availableDraws > 0 ? '开炉炼制' : '真火不足'}
+                        {(gachaState.fires || {})[gachaTargetType] > 0 ? `消耗 1 朵${{'spirit':'灵元','focus':'凝神','foundation':'护基','preservation':'保元','heavenly':'通天'}[gachaTargetType]}真火炼制` : '该类真火不足'}
                     </button>
                     
                     {lastGachaResult && (
