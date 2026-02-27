@@ -811,7 +811,36 @@ const styles = `
 `;
 
 // --- Helpers ---
-
+// --- 绝对等级转换 (用于凝神/护基丹) ---
+function getPillFromAbsoluteIndex(index: number) {
+    // 限制最低为 6 (锻体前期虚品)
+    const safeIndex = Math.max(6, index);
+    return {
+        realm: Math.floor(safeIndex / 6),
+        sub: Math.floor((safeIndex % 6) / 2) as SubRealm,
+        grade: (safeIndex % 2 === 1) ? 'real' : 'virtual' as PillGrade
+    };
+}
+// 获取用户在功能丹药体系下的绝对等级索引 (只看前中后)
+function getUserAbsoluteIndex(realm: number, stage: number) {
+    const subIdx = Math.min(2, Math.floor(stage / 2)); // 0,1->前(0); 2,3->中(1); 4+->后(2)
+    return realm * 6 + subIdx * 2; // 默认算作虚品
+}
+// --- 保元丹概率计算 (将炸炉纳入正态分布) ---
+function calculatePreservationProbs(variance: number) {
+    const sigma = Math.sqrt(variance);
+    const p0 = standardNormalCDF(0); // 0.5
+    
+    // 区间划分: 0.5, 1.2, 1.9, 2.6, 3.3
+    const pFail = (standardNormalCDF(0.5 / sigma) - p0) * 2;
+    const pDef  = (standardNormalCDF(1.2 / sigma) - standardNormalCDF(0.5 / sigma)) * 2;
+    const pFin  = (standardNormalCDF(1.9 / sigma) - standardNormalCDF(1.2 / sigma)) * 2;
+    const pFine = (standardNormalCDF(2.6 / sigma) - standardNormalCDF(1.9 / sigma)) * 2;
+    const pRare = (standardNormalCDF(3.3 / sigma) - standardNormalCDF(2.6 / sigma)) * 2;
+    const pUni  = (1.0 - standardNormalCDF(3.3 / sigma)) * 2;
+    
+    return { fail: pFail, def: pDef, fin: pFin, fine: pFine, rare: pRare, uni: pUni };
+}
 // 丹药辅助函数
 function getPillName(pill: Pill): string {
   const realmName = REALMS[pill.realm] || '未知';
@@ -2509,49 +2538,134 @@ const saveResults = (overrideTrials?: number) => {
     setSavedWeightsMap(prev => ({ ...prev, [n]: newW }));
   };
   
-  // --- Gacha Logic ---
   const handleGachaDraw = () => {
     if (gachaState.availableDraws <= 0) return;
     
-    // 1. 计算用户和丹药的绝对底分
-    const userSubIdx = userStageToSubIndex(cultivation.stage);
-    const userBase = calculateBaseScore(cultivation.realmLevel, userSubIdx);
-    const pillBase = calculateBaseScore(gachaTargetRealm, gachaTargetSub);
-    
-    // 2. 计算方差 y = (用户底分/丹药底分) * 1.5
-    const ratio = Math.max(1, userBase / pillBase);
-    const variance = ratio * 1.5;
-    
-    // 3. 计算正态分布概率
-    const probs = calculatePillProbabilities(variance);
-    
-    // 4. 随机判定 (累加法)
-    const rand = Math.random();
-    let grade: PillGrade = 'low';
-    
-    if (rand < probs.low) {
-        grade = 'low';
-    } else if (rand < probs.low + probs.mid) {
-        grade = 'mid';
-    } else if (rand < probs.low + probs.mid + probs.high) {
-        grade = 'high';
-    } else {
-        grade = 'peak';
+    const r = Math.random();
+    let isSuccess = false;
+    let finalRealm = 1;
+    let finalSub: SubRealm = 0;
+    let finalGrade: PillGrade = 'low';
+    let msg = '✨ 丹韵成型，炼制成功！';
+
+    const userAbsIdx = getUserAbsoluteIndex(cultivation.realmLevel, cultivation.stage);
+
+    if (gachaTargetType === 'spirit') {
+        const userSubIdx = userStageToSubIndex(cultivation.stage);
+        const uBase = calculateBaseScore(cultivation.realmLevel, userSubIdx);
+        const pBase = calculateBaseScore(gachaTargetRealm, gachaTargetSub);
+        const variance = Math.max(1, uBase / pBase) * 1.5;
+        const probs = calculatePillProbabilities(variance);
+        
+        isSuccess = true;
+        finalRealm = gachaTargetRealm;
+        finalSub = gachaTargetSub as SubRealm;
+        
+        if (r < probs.low) finalGrade = 'low';
+        else if (r < probs.low + probs.mid) finalGrade = 'mid';
+        else if (r < probs.low + probs.mid + probs.high) finalGrade = 'high';
+        else finalGrade = 'peak';
+
+    } else if (gachaTargetType === 'focus') {
+        // --- 凝神丹：炸炉 65% | 同级 20% | +1 10% | +2 3.5% | +3 1% | +4 0.5% ---
+        if (r < 0.65) {
+            msg = '💥 灵力狂暴，凝神丹碎裂化为飞灰...';
+        } else {
+            isSuccess = true;
+            let offset = 0;
+            if (r < 0.85) offset = 0;      // 0.65 ~ 0.85 (20%)
+            else if (r < 0.95) offset = 1; // 0.85 ~ 0.95 (10%)
+            else if (r < 0.985) offset = 2;// 0.95 ~ 0.985 (3.5%)
+            else if (r < 0.995) offset = 3;// 0.985 ~ 0.995 (1%)
+            else offset = 4;               // 0.995 ~ 1.0 (0.5%)
+            
+            const pillData = getPillFromAbsoluteIndex(userAbsIdx + offset);
+            finalRealm = pillData.realm;
+            finalSub = pillData.sub;
+            finalGrade = pillData.grade;
+            msg = `✨ 悟道空明，炼成凝神丹 (${offset > 0 ? '+'+offset : '同'}阶)!`;
+        }
+
+    } else if (gachaTargetType === 'foundation') {
+        // --- 护基丹：炸炉 50% | -2级 30% | -1级 12% | 同级 5% | +1级 3% ---
+        if (r < 0.50) {
+            msg = '💥 炉火不纯，护基丹药效散尽...';
+        } else {
+            isSuccess = true;
+            let offset = 0;
+            if (r < 0.80) offset = -2;     // 0.50 ~ 0.80 (30%)
+            else if (r < 0.92) offset = -1;// 0.80 ~ 0.92 (12%)
+            else if (r < 0.97) offset = 0; // 0.92 ~ 0.97 (5%)
+            else offset = 1;               // 0.97 ~ 1.00 (3%)
+            
+            const pillData = getPillFromAbsoluteIndex(userAbsIdx + offset);
+            finalRealm = pillData.realm;
+            finalSub = pillData.sub;
+            finalGrade = pillData.grade;
+            msg = `✨ 固本培元，炼成护基丹 (${offset > 0 ? '+'+offset : offset}阶)!`;
+        }
+
+    } else if (gachaTargetType === 'preservation') {
+        // --- 保元丹：考虑使用者小境界的正态分布 ---
+        // 1. 计算用户的精确底分 (10^Realm * 小境界系数)
+        const userSubIdx = userStageToSubIndex(cultivation.stage);
+        const userCoeff = getRealmBaseCoeff(userSubIdx);
+        const userBase = userCoeff * Math.pow(10, cultivation.realmLevel);
+
+        // 2. 计算保元丹 N 的底分 (作为目标，系数默认为 1)
+        const pillBase = 1 * Math.pow(10, gachaTargetRealm);
+        
+        // 3. 计算跨度倍率与方差
+        const ratio = Math.max(0.1, userBase / pillBase); // 允许越级(ratio < 1)，但设置最小值
+        const variance = ratio * 1.5;
+        const probs = calculatePreservationProbs(variance);
+        
+        finalRealm = gachaTargetRealm;
+        
+        // 4. 正态分布判定
+        if (r < probs.fail) {
+            msg = '💥 药力失衡，炼制出的保元丹当场碎裂。';
+        } else {
+            isSuccess = true;
+            let acc = probs.fail;
+            if (r < acc + probs.def) finalGrade = 'defective';
+            else if (r < acc + probs.def + probs.fin) finalGrade = 'finished';
+            else if (r < acc + probs.def + probs.fin + probs.fine) finalGrade = 'fine';
+            else if (r < acc + probs.def + probs.fin + probs.fine + probs.rare) finalGrade = 'rare';
+            else finalGrade = 'unique';
+        }
+
+    } else if (gachaTargetType === 'heavenly') {
+        // --- 通天丹：炸炉 70% | 人品 20% | 地品 8% | 天品 2% ---
+        finalRealm = cultivation.realmLevel + 1;
+        if (r < 0.70) {
+            msg = '🌩️ 强夺造化遭天谴，通天丹化为齑粉！';
+        } else {
+            isSuccess = true;
+            if (r < 0.90) finalGrade = 'human';       // 0.70 ~ 0.90 (20%)
+            else if (r < 0.98) finalGrade = 'earth';  // 0.90 ~ 0.98 (8%)
+            else finalGrade = 'heaven';               // 0.98 ~ 1.00 (2%)
+            msg = '🌈 天降祥瑞，夺天地造化成丹！';
+        }
     }
     
-    // 5. 产出丹药
-    const newPill: Pill = {
-        id: Date.now().toString(),
-        type: 'spirit',
-        realm: gachaTargetRealm,
-        subRealm: gachaTargetSub as SubRealm,
-        grade: grade,
-        timestamp: Date.now()
-    };
-    
-    setInventory(prev => [...prev, newPill]);
+    // 扣除真火
     setGachaState(prev => ({...prev, availableDraws: prev.availableDraws - 1}));
-    setLastGachaResult(newPill);
+
+    if (isSuccess) {
+        const newPill: Pill = {
+            id: Date.now().toString(),
+            type: gachaTargetType,
+            realm: finalRealm,
+            subRealm: finalSub,
+            grade: finalGrade,
+            timestamp: Date.now()
+        };
+        setInventory(prev =>[...prev, newPill]);
+        setLastGachaResult({ pill: newPill, msg });
+    } else {
+        setLastGachaResult({ pill: null as any, msg });
+    }
   };
   const renderSummary = (result: GameResult) => {
     return (
@@ -3446,76 +3560,161 @@ const saveResults = (overrideTrials?: number) => {
                         </div>
                     </div>
 
-                    {/* --- 炼丹目标选择区 --- */}
                     <div style={{background: '#f8fafc', padding: 16, borderRadius: 12, border: '1px solid #e2e8f0', marginBottom: 24}}>
-                        <div style={{fontSize: '0.9rem', fontWeight: 600, marginBottom: 12, color: '#475569'}}>选择灵元丹境界</div>
+                        <div style={{fontSize: '0.9rem', fontWeight: 600, marginBottom: 12, color: '#475569'}}>研习丹方</div>
                         
-                        <div style={{display: 'flex', gap: 12, justifyContent: 'center', marginBottom: 16}}>
-                            <select 
-                                value={gachaTargetRealm}
-                                onChange={(e) => {
-                                    setGachaTargetRealm(parseInt(e.target.value));
-                                    setGachaTargetSub(0); // 切换大境界时重置小境界
-                                }}
-                                style={{padding: '8px 12px', borderRadius: 8, border: '1px solid #cbd5e1', background: 'white', fontWeight: 600, outline: 'none'}}
-                            >
-                                {Array.from({length: Math.max(1, cultivation.realmLevel)}).map((_, i) => (
-                                    <option key={i+1} value={i+1}>{REALMS[i+1]}</option>
-                                ))}
-                            </select>
-
-                            <select 
-                                value={gachaTargetSub}
-                                onChange={(e) => setGachaTargetSub(parseInt(e.target.value))}
-                                style={{padding: '8px 12px', borderRadius: 8, border: '1px solid #cbd5e1', background: 'white', fontWeight: 600, outline: 'none'}}
-                            >
-                                {[0,1,2,3,4].map(idx => {
-                                    // 不允许选择高于自己当前小境界的丹药
-                                    if (gachaTargetRealm === cultivation.realmLevel) {
-                                        const maxSub = userStageToSubIndex(cultivation.stage);
-                                        if (idx > maxSub) return null;
-                                    }
-                                    const subNames = ['前期', '中期', '后期', '圆满', '大圆满'];
-                                    return <option key={idx} value={idx}>{subNames[idx]}</option>;
-                                })}
-                            </select>
+                        {/* 丹药大类选择 */}
+                        <div style={{display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 6, marginBottom: 16}}>
+                            {[
+                                {id: 'spirit', label: '灵元丹'}, {id: 'focus', label: '凝神丹'}, 
+                                {id: 'foundation', label: '护基丹'}, {id: 'preservation', label: '保元丹'}, 
+                                {id: 'heavenly', label: '通天丹'}
+                            ].map(t => (
+                                <button
+                                    key={t.id}
+                                    onClick={() => { setGachaTargetType(t.id as PillType); setLastGachaResult(null); }}
+                                    style={{
+                                        padding: '6px 12px', borderRadius: '8px', border: '1px solid',
+                                        borderColor: gachaTargetType === t.id ? '#8b5cf6' : '#cbd5e1',
+                                        background: gachaTargetType === t.id ? '#ede9fe' : 'white',
+                                        color: gachaTargetType === t.id ? '#6d28d9' : '#64748b',
+                                        fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer'
+                                    }}
+                                >
+                                    {t.label}
+                                </button>
+                            ))}
                         </div>
 
-                        {/* --- 动态概率显示 --- */}
+                        {/* --- 动态渲染每种丹药的配置与概率 --- */}
                         {(() => {
-                            const userSub = userStageToSubIndex(cultivation.stage);
-                            const uBase = calculateBaseScore(cultivation.realmLevel, userSub);
-                            const pBase = calculateBaseScore(gachaTargetRealm, gachaTargetSub);
-                            
-                            const ratio = Math.max(1, uBase / pBase);
-                            const variance = ratio * 1.5;
-                            const probs = calculatePillProbabilities(variance);
-                            
-                            return (
-                                <div>
-                                    <div style={{fontSize: '0.75rem', color: '#94a3b8', marginBottom: 8}}>
-                                        炼制方差: σ² = {variance.toFixed(2)} (跨阶碾压: {ratio.toFixed(2)}x)
-                                    </div>
-                                    <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6}}>
-                                        <div style={{background: '#f1f5f9', padding: '8px 0', borderRadius: 6}}>
-                                            <div style={{fontSize: '0.7rem', color: '#64748b'}}>下品</div>
-                                            <div style={{fontWeight: 800, color: '#334155'}}>{(probs.low * 100).toFixed(1)}%</div>
+                            if (gachaTargetType === 'spirit') {
+                                const userSub = userStageToSubIndex(cultivation.stage);
+                                const uBase = calculateBaseScore(cultivation.realmLevel, userSub);
+                                const pBase = calculateBaseScore(gachaTargetRealm, gachaTargetSub);
+                                const variance = Math.max(1, uBase / pBase) * 1.5;
+                                const probs = calculatePillProbabilities(variance);
+                                return (
+                                    <>
+                                        <div style={{display: 'flex', gap: 12, justifyContent: 'center', marginBottom: 16}}>
+                                            <select value={gachaTargetRealm} onChange={(e) => { setGachaTargetRealm(parseInt(e.target.value)); setGachaTargetSub(0); }} style={{padding: '6px', borderRadius: 6, border: '1px solid #cbd5e1', outline: 'none'}}>
+                                                {Array.from({length: Math.max(1, cultivation.realmLevel)}).map((_, i) => <option key={i+1} value={i+1}>{REALMS[i+1]}</option>)}
+                                            </select>
+                                            <select value={gachaTargetSub} onChange={(e) => setGachaTargetSub(parseInt(e.target.value))} style={{padding: '6px', borderRadius: 6, border: '1px solid #cbd5e1', outline: 'none'}}>
+                                                {[0,1,2,3,4].map(idx => {
+                                                    if (gachaTargetRealm === cultivation.realmLevel && idx > userSub) return null;
+                                                    return <option key={idx} value={idx}>{['前期', '中期', '后期', '圆满', '大圆满'][idx]}</option>;
+                                                })}
+                                            </select>
                                         </div>
-                                        <div style={{background: '#e0f2fe', padding: '8px 0', borderRadius: 6}}>
-                                            <div style={{fontSize: '0.7rem', color: '#0369a1'}}>中品</div>
-                                            <div style={{fontWeight: 800, color: '#0284c7'}}>{(probs.mid * 100).toFixed(1)}%</div>
+                                        <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6}}>
+                                            <div style={{background: '#f1f5f9', padding: '8px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#64748b'}}>下品</div><div style={{fontWeight: 800, color: '#334155'}}>{(probs.low * 100).toFixed(1)}%</div></div>
+                                            <div style={{background: '#e0f2fe', padding: '8px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#0369a1'}}>中品</div><div style={{fontWeight: 800, color: '#0284c7'}}>{(probs.mid * 100).toFixed(1)}%</div></div>
+                                            <div style={{background: '#fae8ff', padding: '8px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#a21caf'}}>上品</div><div style={{fontWeight: 800, color: '#d946ef'}}>{(probs.high * 100).toFixed(1)}%</div></div>
+                                            <div style={{background: '#fffbeb', padding: '8px 0', borderRadius: 6, border: '1px solid #fcd34d'}}><div style={{fontSize: '0.7rem', color: '#b45309'}}>极品</div><div style={{fontWeight: 800, color: '#d97706'}}>{(probs.peak * 100).toFixed(1)}%</div></div>
                                         </div>
-                                        <div style={{background: '#fae8ff', padding: '8px 0', borderRadius: 6}}>
-                                            <div style={{fontSize: '0.7rem', color: '#a21caf'}}>上品</div>
-                                            <div style={{fontWeight: 800, color: '#d946ef'}}>{(probs.high * 100).toFixed(1)}%</div>
+                                        <div style={{fontSize: '0.7rem', color: '#94a3b8', marginTop: 8}}>灵元丹不具危险，百分百成功出炉。</div>
+                                    </>
+                                );
+                            }
+
+                            // ... （灵元丹保持不变）
+
+                            if (gachaTargetType === 'focus') {
+                                return (
+                                    <>
+                                        <div style={{marginBottom: 16, fontWeight: 700, color: '#9d174d', background: '#fce7f3', padding: '8px', borderRadius: 8}}>
+                                            目标区间：当前等级 ~ 高四级
                                         </div>
-                                        <div style={{background: '#fffbeb', padding: '8px 0', borderRadius: 6, border: '1px solid #fcd34d'}}>
-                                            <div style={{fontSize: '0.7rem', color: '#b45309'}}>极品</div>
-                                            <div style={{fontWeight: 800, color: '#d97706'}}>{(probs.peak * 100).toFixed(1)}%</div>
+                                        <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 6}}>
+                                            <div style={{background: '#fee2e2', padding: '6px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#b91c1c'}}>炸炉 (失败)</div><div style={{fontWeight: 800, color: '#991b1b'}}>65.0%</div></div>
+                                            <div style={{background: '#f1f5f9', padding: '6px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#64748b'}}>同阶</div><div style={{fontWeight: 800, color: '#334155'}}>20.0%</div></div>
+                                            <div style={{background: '#e0f2fe', padding: '6px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#0369a1'}}>高1阶</div><div style={{fontWeight: 800, color: '#0284c7'}}>10.0%</div></div>
                                         </div>
-                                    </div>
-                                </div>
-                            );
+                                        <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6}}>
+                                            <div style={{background: '#fae8ff', padding: '6px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#a21caf'}}>高2阶</div><div style={{fontWeight: 800, color: '#d946ef'}}>3.5%</div></div>
+                                            <div style={{background: '#fef3c7', padding: '6px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#b45309'}}>高3阶</div><div style={{fontWeight: 800, color: '#d97706'}}>1.0%</div></div>
+                                            <div style={{background: '#ffedd5', padding: '6px 0', borderRadius: 6, border: '1px solid #fb923c'}}><div style={{fontSize: '0.7rem', color: '#9a3412'}}>高4阶 (神迹)</div><div style={{fontWeight: 800, color: '#c2410c'}}>0.5%</div></div>
+                                        </div>
+                                        <div style={{fontSize: '0.7rem', color: '#94a3b8', marginTop: 8}}>风险极高，但有望炼出跨大境界神药。</div>
+                                    </>
+                                );
+                            }
+
+                            if (gachaTargetType === 'foundation') {
+                                return (
+                                    <>
+                                        <div style={{marginBottom: 16, fontWeight: 700, color: '#3f6212', background: '#ecfccb', padding: '8px', borderRadius: 8}}>
+                                            目标区间：低二级 ~ 高一级
+                                        </div>
+                                        <div style={{display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 4}}>
+                                            <div style={{background: '#fee2e2', padding: '8px 0', borderRadius: 6}}><div style={{fontSize: '0.65rem', color: '#b91c1c'}}>炸炉</div><div style={{fontWeight: 700, fontSize: '0.75rem', color: '#991b1b'}}>50%</div></div>
+                                            <div style={{background: '#f1f5f9', padding: '8px 0', borderRadius: 6}}><div style={{fontSize: '0.65rem', color: '#64748b'}}>低2阶</div><div style={{fontWeight: 700, fontSize: '0.75rem', color: '#334155'}}>30%</div></div>
+                                            <div style={{background: '#e0f2fe', padding: '8px 0', borderRadius: 6}}><div style={{fontSize: '0.65rem', color: '#0369a1'}}>低1阶</div><div style={{fontWeight: 700, fontSize: '0.75rem', color: '#0284c7'}}>12%</div></div>
+                                            <div style={{background: '#dcfce7', padding: '8px 0', borderRadius: 6}}><div style={{fontSize: '0.65rem', color: '#15803d'}}>同阶</div><div style={{fontWeight: 700, fontSize: '0.75rem', color: '#166534'}}>5%</div></div>
+                                            <div style={{background: '#fef3c7', padding: '8px 0', borderRadius: 6}}><div style={{fontSize: '0.65rem', color: '#b45309'}}>高1阶</div><div style={{fontWeight: 700, fontSize: '0.75rem', color: '#d97706'}}>3%</div></div>
+                                        </div>
+                                        <div style={{fontSize: '0.7rem', color: '#94a3b8', marginTop: 8}}>主要用于炼制低阶保底药效。</div>
+                                    </>
+                                );
+                            }
+
+                            if (gachaTargetType === 'preservation') {
+                                // 【对齐逻辑】考虑使用者的小境界系数
+                                const userSub = userStageToSubIndex(cultivation.stage);
+                                const uBase = getRealmBaseCoeff(userSub) * Math.pow(10, cultivation.realmLevel);
+                                const pBase = 1 * Math.pow(10, gachaTargetRealm); // 目标N的基准
+                                
+                                const ratio = uBase / pBase;
+                                const variance = ratio * 1.5;
+                                const probs = calculatePreservationProbs(variance);
+                                
+                                return (
+                                    <>
+                                        <div style={{display: 'flex', gap: 12, justifyContent: 'center', marginBottom: 16}}>
+                                            <span style={{fontSize: '0.85rem', alignSelf: 'center'}}>炼制 N =</span>
+                                            <select value={gachaTargetRealm} onChange={e => setGachaTargetRealm(parseInt(e.target.value))} style={{padding: '6px 12px', borderRadius: 8, border: '1px solid #cbd5e1', outline: 'none', fontWeight: 600, background: 'white'}}>
+                                                {/* 允许选择到 自身大境界 + 1 */}
+                                                {Array.from({length: cultivation.realmLevel + 1}).map((_, i) => (
+                                                    <option key={i+1} value={i+1}>{i+1} ({REALMS[i+1] || '未知'})</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <div style={{fontSize: '0.75rem', color: '#94a3b8', marginBottom: 10}}>
+                                                炼制方差: σ² = {variance.toFixed(2)} ({ratio.toFixed(2)}x 跨度)
+                                            </div>
+                                            <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginBottom: 6}}>
+                                                <div style={{background: '#fee2e2', padding: '6px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#b91c1c'}}>炸炉</div><div style={{fontWeight: 800, color: '#991b1b'}}>{(probs.fail * 100).toFixed(1)}%</div></div>
+                                                <div style={{background: '#f1f5f9', padding: '6px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#64748b'}}>次品</div><div style={{fontWeight: 800, color: '#334155'}}>{(probs.def * 100).toFixed(1)}%</div></div>
+                                                <div style={{background: '#e0f2fe', padding: '6px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#0369a1'}}>成品</div><div style={{fontWeight: 800, color: '#0284c7'}}>{(probs.fin * 100).toFixed(1)}%</div></div>
+                                            </div>
+                                            <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6}}>
+                                                <div style={{background: '#dcfce7', padding: '6px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#15803d'}}>精品</div><div style={{fontWeight: 800, color: '#166534'}}>{(probs.fine * 100).toFixed(1)}%</div></div>
+                                                <div style={{background: '#fae8ff', padding: '6px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#a21caf'}}>珍品</div><div style={{fontWeight: 800, color: '#d946ef'}}>{(probs.rare * 100).toFixed(1)}%</div></div>
+                                                <div style={{background: '#fffbeb', padding: '6px 0', borderRadius: 6, border: '1px solid #fcd34d'}}><div style={{fontSize: '0.7rem', color: '#b45309'}}>孤品</div><div style={{fontWeight: 800, color: '#d97706'}}>{(probs.uni * 100).toFixed(1)}%</div></div>
+                                            </div>
+                                        </div>
+                                    </>
+                                );
+                            }
+
+                            if (gachaTargetType === 'heavenly') {
+                                return (
+                                    <>
+                                        <div style={{marginBottom: 16, fontWeight: 700, color: '#9a3412', background: '#ffedd5', padding: '8px', borderRadius: 8}}>
+                                            目标: {REALMS[cultivation.realmLevel + 1]}·通天渡厄丹
+                                        </div>
+                                        <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6}}>
+                                            <div style={{background: '#fee2e2', padding: '8px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#b91c1c'}}>炸炉</div><div style={{fontWeight: 800, color: '#991b1b'}}>70%</div></div>
+                                            <div style={{background: '#f1f5f9', padding: '8px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#64748b'}}>人品</div><div style={{fontWeight: 800, color: '#334155'}}>20%</div></div>
+                                            <div style={{background: '#e0f2fe', padding: '8px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#0369a1'}}>地品</div><div style={{fontWeight: 800, color: '#0284c7'}}>8%</div></div>
+                                            <div style={{background: '#fffbeb', padding: '8px 0', borderRadius: 6, border: '1px solid #fcd34d'}}><div style={{fontSize: '0.7rem', color: '#b45309'}}>天品</div><div style={{fontWeight: 800, color: '#d97706'}}>2%</div></div>
+                                        </div>
+                                        <div style={{fontSize: '0.7rem', color: '#94a3b8', marginTop: 12}}>极易遭受天谴炸炉。成功后随机赋予天地人三品。</div>
+                                    </>
+                                );
+                            }
                         })()}
                     </div>
                     
@@ -3530,10 +3729,14 @@ const saveResults = (overrideTrials?: number) => {
                     
                     {lastGachaResult && (
                         <div style={{marginTop: 20, animation: 'fadeIn 0.5s'}}>
-                            <div style={{fontSize: '0.9rem', color: '#059669', fontWeight: 600}}>成丹：</div>
-                            <div style={{marginTop: 8, padding: '10px 16px', border: '1px solid #10b981', background: '#ecfdf5', borderRadius: 8, display: 'inline-block', fontWeight: 700, color: '#065f46'}}>
-                                {getPillName(lastGachaResult)}
+                            <div style={{fontSize: '0.85rem', color: lastGachaResult.pill ? '#059669' : '#dc2626', fontWeight: 600, marginBottom: 4}}>
+                                {lastGachaResult.msg}
                             </div>
+                            {lastGachaResult.pill && (
+                                <div style={{padding: '10px 16px', border: '1px solid #10b981', background: '#ecfdf5', borderRadius: 8, display: 'inline-block', fontWeight: 700, color: '#065f46'}}>
+                                    {getPillName(lastGachaResult.pill)}
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
