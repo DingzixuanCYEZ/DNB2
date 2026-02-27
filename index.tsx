@@ -3688,7 +3688,7 @@ const saveResults = (overrideTrials?: number) => {
                                             <div style={{
                                                 height: '100%', 
                                                 background: claimable > 0 ? '#ef4444' : 'linear-gradient(90deg, #f59e0b, #ef4444)', 
-                                                width: \`\${progressPct}%\`, 
+                                                width: `${progressPct}%`, // <--- 修复后
                                                 transition: 'width 0.3s'
                                             }} />
                                         </div>
