@@ -1480,6 +1480,16 @@ const Game = () => {
   const setSavedWeightsMap = (val: any) => updateModeData('savedWeightsMap', val);
 
   const { n, interval, useCenter, isVariable, variableWeights, showFeedback, volume, displayTime, roundMode, customRoundCount, pacingMode, showRealtimeInterval, showProgressBar, showRoundCounter, showInputConfirmation } = currentMode.settings;
+  // ... 上面是 const { n, interval ... } = currentMode.settings;
+
+  // 【修复开始】补回这些丢失的衍生变量
+  const realmName = REALMS[cultivation.realmLevel] || '未知';
+  const stageName = STAGES[cultivation.stage] || '';
+  const isBottleneck = [1, 3, 5].includes(cultivation.stage);
+  const isGreatPerfect = cultivation.stage === 7;
+  // 【修复结束】
+
+  // 下面是 const gachaState = masterData.gachaState;
   const setN = (val: any) => updateSetting('n', val);
   const setInterval = (val: any) => updateSetting('interval', val);
   const setUseCenter = (val: any) => updateSetting('useCenter', val);
