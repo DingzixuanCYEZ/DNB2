@@ -13,7 +13,13 @@ const DEFAULT_DISPLAY_TIME = 0.5;
 
 const REALMS = ['', '锻体', '炼气', '筑基', '结丹', '元婴', '化神', '炼虚', '合体', '大乘', '渡劫'];
 const STAGES = ['前期', '前期巅峰', '中期', '中期巅峰', '后期', '后期巅峰', '圆满', '大圆满'];
-
+type PlayMode = 'memorize' | 'intuition' | 'technique' | 'score';
+const MODE_LABELS: Record<PlayMode, string> = {
+    memorize: '强记',
+    intuition: '直觉',
+    technique: '良心技巧',
+    score: '刷分'
+};
 // 丹药类型
 type PillType = 'spirit' | 'focus' | 'foundation' | 'heavenly' | 'preservation';
 
@@ -89,6 +95,7 @@ interface GameResult {
   beforeXP?: number; // 【新增】游戏前的经验
   afterXP?: number; // 【新增】游戏后的经验
   afterStage?: number; // Snapshot after game
+  mode?: string; // 【新增】记录该局属于哪个模式
   pacingMode?: PacingMode;
   
   // 丹药记录
@@ -1226,7 +1233,8 @@ const HistoryDayGroup: React.FC<HistoryDayGroupProps> = ({
                                 <div key={run.id} style={{padding: 12, border: '1px solid #e2e8f0', borderRadius: 10, background: '#f8fafc'}}>
                                     <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: 6}}>
                                         <span style={{fontWeight: 700, color: '#0f172a'}}>
-                                        {run.isVariable ? `Var N (${run.variableDifficulty})` : `N = ${run.n}`}
+                                           <span style={{background: '#e2e8f0', color: '#475569', padding: '2px 6px', borderRadius: 4, marginRight: 6, fontSize: '0.7rem'}}>{MODE_LABELS[run.mode as PlayMode] || '未知'}</span>
+                                           {run.isVariable ? `Var N (${run.variableDifficulty})` : `N = ${run.n}`}
                                         </span>
                                         <span style={{fontSize: '0.75rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: 6}}>
                                         耗时: {timeStr}s ({run.totalTrials}次) | 间隔: {intervalStr}s | {formatDateTime(run.timestamp)}
@@ -1397,212 +1405,103 @@ const getSavedSetting = (key: string, def: any) => {
     return def;
 };
 
-const Game = () => {
-  // --- Persistent Settings State ---
-  const [n, setN] = useState(() => getSavedSetting('n', DEFAULT_N));
-  const [interval, setInterval] = useState(() => getSavedSetting('interval', DEFAULT_INTERVAL));
-  const [useCenter, setUseCenter] = useState(() => getSavedSetting('useCenter', true));
-  const [isVariable, setIsVariable] = useState(() => getSavedSetting('isVariable', false));
-  const [variableWeights, setVariableWeights] = useState<number[]>(() => getSavedSetting('variableWeights', [1]));
-  const [showFeedback, setShowFeedback] = useState(() => getSavedSetting('showFeedback', false));
-  const [volume, setVolume] = useState(() => getSavedSetting('volume', 0.5));
-  const [displayTime, setDisplayTime] = useState(() => getSavedSetting('displayTime', DEFAULT_DISPLAY_TIME));
-  
-  const [roundMode, setRoundMode] = useState<RoundMode>(() => getSavedSetting('roundMode', 'standard'));
-  const [customRoundCount, setCustomRoundCount] = useState<number>(() => getSavedSetting('customRoundCount', 20));
-  
-  const [pacingMode, setPacingMode] = useState<PacingMode>(() => getSavedSetting('pacingMode', 'standard'));
-  const [showRealtimeInterval, setShowRealtimeInterval] = useState(() => getSavedSetting('showRealtimeInterval', false));
+// --- Master Multi-Mode State ---
+  const DEFAULT_MODE_DATA = {
+      history:[],
+      cultivation: { realmLevel: 1, stage: 0, currentXP: 0, recentScores:[], totalStudyTime: 0, stageStudyTime: 0, totalSessions: 0, stageSessions: 0 },
+      milestones: [],
+      inventory:[],
+      savedWeightsMap: {},
+      settings: {
+          n: DEFAULT_N, interval: DEFAULT_INTERVAL, useCenter: true, isVariable: false,
+          variableWeights: [1], showFeedback: false, volume: 0.5, displayTime: DEFAULT_DISPLAY_TIME,
+          roundMode: 'standard', customRoundCount: 20, pacingMode: 'standard',
+          showRealtimeInterval: false, showProgressBar: true, showRoundCounter: true, showInputConfirmation: true
+      }
+  };
 
-  // New settings for progress display
-  const [showProgressBar, setShowProgressBar] = useState(() => getSavedSetting('showProgressBar', true));
-  const [showRoundCounter, setShowRoundCounter] = useState(() => getSavedSetting('showRoundCounter', true));
-  
-  // New setting for input confirmation
-  const [showInputConfirmation, setShowInputConfirmation] = useState(() => getSavedSetting('showInputConfirmation', true));
-
-  // **新增**：保存不同 N 下的 variableWeights 配置
-  const [savedWeightsMap, setSavedWeightsMap] = useState<Record<number, number[]>>(() => {
+  const [masterData, setMasterData] = useState(() => {
       try {
-          const s = localStorage.getItem('dual-n-back-weights-map-v1');
-          return s ? JSON.parse(s) : {};
-      } catch(e) { return {}; }
-  });
-
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [sequence, setSequence] = useState<GameStep[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(-1);
-  const currentIndexRef = useRef(-1);
-  const [totalGameTrials, setTotalGameTrials] = useState(0);
-  
-  const [dynamicInterval, setDynamicInterval] = useState(DEFAULT_INTERVAL);
-  const runningIntervalRef = useRef(DEFAULT_INTERVAL);
-  const startTimeRef = useRef<number>(0);
-  
-  // --- Persistent Data State (Lazy Load) ---
-  const [history, setHistory] = useState<GameResult[]>(() => {
-      try {
-          const s = localStorage.getItem('dual-n-back-history-v4');
-          return s ? JSON.parse(s) : [];
-      } catch(e) { return []; }
-  });
-
-  const [cultivation, setCultivation] = useState<CultivationState>(() => {
-      try {
-          const s = localStorage.getItem('dual-n-back-cultivation-v1');
-          if (s) {
-            const parsed = JSON.parse(s);
-            if (parsed.stageStudyTime === undefined) parsed.stageStudyTime = 0;
-            return {
-                ...parsed,
-                totalSessions: parsed.totalSessions || 0,
-                stageSessions: parsed.stageSessions || 0
-            };
-          }
+          const s = localStorage.getItem('dual-n-back-master-v2');
+          if (s) return JSON.parse(s);
       } catch(e) {}
       return {
-          realmLevel: 1, 
-          stage: 0, 
-          currentXP: 0,
-          recentScores: [], 
-          totalStudyTime: 0, 
-          stageStudyTime: 0, 
-          totalSessions: 0,
-          stageSessions: 0
+          gachaState: { accumulatedTime: 0, availableDraws: 0 },
+          modes: {
+              memorize: JSON.parse(JSON.stringify(DEFAULT_MODE_DATA)),
+              intuition: JSON.parse(JSON.stringify(DEFAULT_MODE_DATA)),
+              technique: JSON.parse(JSON.stringify(DEFAULT_MODE_DATA)),
+              score: JSON.parse(JSON.stringify(DEFAULT_MODE_DATA))
+          }
       };
   });
 
-  // 修复：将 Realm 名称和阶段名称移至顶层，供整个组件使用
-    const realmName = REALMS[cultivation.realmLevel] || '未知';
-    const stageName = STAGES[cultivation.stage] || '';
-  
-  // 【新增】在这里定义瓶颈状态，防止 ReferenceError
-  const isBottleneck = [1, 3, 5].includes(cultivation.stage);
-  const isGreatPerfect = cultivation.stage === 7;
+  const [activeMode, setActiveMode] = useState<PlayMode>('score');
+  const [showGlobalHistory, setShowGlobalHistory] = useState(false); // 综合记录弹窗
 
-  const [milestones, setMilestones] = useState<Milestone[]>(() => {
-      try {
-          const s = localStorage.getItem('dual-n-back-milestones-v1');
-          return s ? JSON.parse(s) : [];
-      } catch(e) { return []; }
-  });
-
-  // --- Pill & Inventory State ---
-  const [inventory, setInventory] = useState<Pill[]>(() => {
-    try {
-      const s = localStorage.getItem('dual-n-back-inventory-v1');
-      return s ? JSON.parse(s) : [];
-    } catch { return []; }
-  });
-  
-  const [gachaState, setGachaState] = useState<GachaState>(() => {
-    try {
-      const s = localStorage.getItem('dual-n-back-gacha-v1');
-      return s ? JSON.parse(s) : { accumulatedTime: 0, availableDraws: 0 };
-    } catch { return { accumulatedTime: 0, availableDraws: 0 }; }
-  });
-
-  const [selectedPillId, setSelectedPillId] = useState<string | null>(null);
-  const [showInventory, setShowInventory] = useState(false);
-  const [inventoryFilter, setInventoryFilter] = useState<PillType | 'all'>('all'); // 【新增】储物袋分类过滤器
-  const [showGacha, setShowGacha] = useState(false);
-  const [lastGachaResult, setLastGachaResult] = useState<Pill | null>(null); // New state for gacha result
-// --- Gacha Selection State ---
-  const [gachaTargetRealm, setGachaTargetRealm] = useState(1);
-  const [gachaTargetSub, setGachaTargetSub] = useState(0);
-
-  // 打开坊市时，自动将选项重置为你当前的境界
+  // 统一持久化存储
   useEffect(() => {
-      if (showGacha) {
-          setGachaTargetRealm(Math.max(1, cultivation.realmLevel));
-          setGachaTargetSub(userStageToSubIndex(cultivation.stage));
-      }
-  }, [showGacha, cultivation.realmLevel, cultivation.stage]);
-  const [showHistory, setShowHistory] = useState(false);
-  const [expandedDays, setExpandedDays] = useState<Record<string, boolean>>({});
-  
-  const [showSummary, setShowSummary] = useState(false);
-  const [showMilestones, setShowMilestones] = useState(false);
-  const [lastResult, setLastResult] = useState<GameResult | null>(null);
-  
-  const [activePos, setActivePos] = useState<number | null>(null);
-  const [currentNumberDisplay, setCurrentNumberDisplay] = useState<number | null>(null); 
-  
-  const [audioPressed, setAudioPressed] = useState(false);
-  const [visualPressed, setVisualPressed] = useState(false);
-  
-  const [audioFeedback, setAudioFeedback] = useState<'correct' | 'wrong' | null>(null);
-  const [visualFeedback, setVisualFeedback] = useState<'correct' | 'wrong' | null>(null);
+      localStorage.setItem('dual-n-back-master-v2', JSON.stringify(masterData));
+  }, [masterData]);
 
-  // Analysis state
-  const [searchN, setSearchN] = useState<string>('');
-  const [searchType, setSearchType] = useState<'all' | 'fixed' | 'variable'>('all');
+  // 状态更新包装器
+  const updateModeData = useCallback((key: string, value: any) => {
+      setMasterData(prev => ({
+          ...prev, modes: { ...prev.modes, [activeMode]: {
+              ...prev.modes[activeMode],
+              [key]: typeof value === 'function' ? value(prev.modes[activeMode][key]) : value
+          }}
+      }));
+  }, [activeMode]);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const updateSetting = useCallback((key: string, value: any) => {
+      setMasterData(prev => ({
+          ...prev, modes: { ...prev.modes, [activeMode]: {
+              ...prev.modes[activeMode], settings: {
+                  ...prev.modes[activeMode].settings,
+                  [key]: typeof value === 'function' ? value(prev.modes[activeMode].settings[key]) : value
+              }
+          }}
+      }));
+  }, [activeMode]);
 
-  const scoreRef = useRef<Record<'audio' | 'visual', ScoreDetail>>({
-    audio: { hits: 0, misses: 0, falseAlarms: 0, correctRejections: 0 },
-    visual: { hits: 0, misses: 0, falseAlarms: 0, correctRejections: 0 }
-  });
+  // 提取当前模式的活跃状态 (通过引用替换旧的独立 state)
+  const currentMode = masterData.modes[activeMode];
 
-  const timerRef = useRef<number | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const audioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
-  const inputsRef = useRef({ audio: false, visual: false });
-  const prevTrialInputsRef = useRef({ audio: false, visual: false });
-  const currentTrialStartTimeRef = useRef<number>(0);
-  // 【新增/修改】在这里添加这两个 Ref 定义
-  const sequenceRef = useRef<GameStep[]>([]); 
-  
-  // 这是一个包含所有关键状态的 Ref，确保 saveResults 能读到最新数据
-  const latestStateRef = useRef({
-      n, interval, isVariable, variableWeights, pacingMode, 
-      cultivation, inventory, gachaState, milestones, history, selectedPillId
-  });
+  const history = currentMode.history;
+  const setHistory = (val: any) => updateModeData('history', val);
+  const cultivation = currentMode.cultivation;
+  const setCultivation = (val: any) => updateModeData('cultivation', val);
+  const milestones = currentMode.milestones;
+  const setMilestones = (val: any) => updateModeData('milestones', val);
+  const inventory = currentMode.inventory;
+  const setInventory = (val: any) => updateModeData('inventory', val);
+  const savedWeightsMap = currentMode.savedWeightsMap;
+  const setSavedWeightsMap = (val: any) => updateModeData('savedWeightsMap', val);
 
-  // 【新增】使用 Effect 实时更新 latestStateRef
-  useEffect(() => {
-      latestStateRef.current = {
-          n, interval, isVariable, variableWeights, pacingMode, 
-          cultivation, inventory, gachaState, milestones, history, selectedPillId
-      };
-  });
-  // --- Effects for Auto-Saving ---
-  
-  // Save Settings
-  useEffect(() => {
-    const s = { n, interval, useCenter, isVariable, variableWeights, showFeedback, volume, roundMode, customRoundCount, showProgressBar, showRoundCounter, showInputConfirmation, displayTime, pacingMode, showRealtimeInterval };
-    localStorage.setItem('dual-n-back-settings-v2', JSON.stringify(s));
-  }, [n, interval, useCenter, isVariable, variableWeights, showFeedback, volume, roundMode, customRoundCount, showProgressBar, showRoundCounter, showInputConfirmation, displayTime, pacingMode, showRealtimeInterval]);
+  // 提取当前模式的偏好设置
+  const { n, interval, useCenter, isVariable, variableWeights, showFeedback, volume, displayTime, roundMode, customRoundCount, pacingMode, showRealtimeInterval, showProgressBar, showRoundCounter, showInputConfirmation } = currentMode.settings;
+  const setN = (val: any) => updateSetting('n', val);
+  const setInterval = (val: any) => updateSetting('interval', val);
+  const setUseCenter = (val: any) => updateSetting('useCenter', val);
+  const setIsVariable = (val: any) => updateSetting('isVariable', val);
+  const setVariableWeights = (val: any) => updateSetting('variableWeights', val);
+  const setShowFeedback = (val: any) => updateSetting('showFeedback', val);
+  const setVolume = (val: any) => updateSetting('volume', val);
+  const setDisplayTime = (val: any) => updateSetting('displayTime', val);
+  const setRoundMode = (val: any) => updateSetting('roundMode', val);
+  const setCustomRoundCount = (val: any) => updateSetting('customRoundCount', val);
+  const setPacingMode = (val: any) => updateSetting('pacingMode', val);
+  const setShowRealtimeInterval = (val: any) => updateSetting('showRealtimeInterval', val);
+  const setShowProgressBar = (val: any) => updateSetting('showProgressBar', val);
+  const setShowRoundCounter = (val: any) => updateSetting('showRoundCounter', val);
+  const setShowInputConfirmation = (val: any) => updateSetting('showInputConfirmation', val);
 
-  // Save Weights Map
-  useEffect(() => {
-      localStorage.setItem('dual-n-back-weights-map-v1', JSON.stringify(savedWeightsMap));
-  }, [savedWeightsMap]);
-
-  // Save History
-  useEffect(() => {
-     localStorage.setItem('dual-n-back-history-v4', JSON.stringify(history));
-  }, [history]);
-
-  // Save Cultivation
-  useEffect(() => {
-     localStorage.setItem('dual-n-back-cultivation-v1', JSON.stringify(cultivation));
-  }, [cultivation]);
-
-  // Save Milestones
-  useEffect(() => {
-     localStorage.setItem('dual-n-back-milestones-v1', JSON.stringify(milestones));
-  }, [milestones]);
-  
-  // Save Inventory & Gacha
-  useEffect(() => {
-    localStorage.setItem('dual-n-back-inventory-v1', JSON.stringify(inventory));
-  }, [inventory]);
-  
-  useEffect(() => {
-    localStorage.setItem('dual-n-back-gacha-v1', JSON.stringify(gachaState));
-  }, [gachaState]);
+  // 全局共享状态
+  const gachaState = masterData.gachaState;
+  const setGachaState = (val: any) => setMasterData(prev => ({
+      ...prev, gachaState: typeof val === 'function' ? val(prev.gachaState) : val
+  }));
 
 
   const handleExportData = () => {
@@ -1624,9 +1523,18 @@ const Game = () => {
 
   const handleImportData = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
+      const data = JSON.parse(ev.target?.result as string);
+      if (data.modes && data.gachaState) {
+          setMasterData(data);
+          alert('天道数据导入成功！');
+      } else {
+          alert('存档文件格式不符！请使用新版多模式存档。');
+      }
+      /*
       try {
         const data = JSON.parse(ev.target?.result as string);
         if (data.history) setHistory(data.history);
@@ -1638,7 +1546,7 @@ const Game = () => {
         alert('存档导入成功！');
       } catch (err) {
         alert('存档文件无效');
-      }
+      }*/
     };
     reader.readAsText(file);
   };
@@ -1824,6 +1732,7 @@ const Game = () => {
       stage: prevCultivation?.stage || cultivation.stage,
       afterRealmLevel: nextCultivation.realmLevel,
       afterStage: nextCultivation.stage,
+      mode: activeMode, // 【新增】标记这条记录属于哪个模式
       pacingMode,
       afterRealmLevel: nextCultivation.realmLevel,
       afterStage: nextCultivation.stage,
@@ -2540,7 +2449,9 @@ const saveResults = (overrideTrials?: number) => {
       <div className="modal-overlay" onClick={() => setShowSummary(false)}>
         <div className="modal" onClick={e => e.stopPropagation()}>
           <div style={{textAlign: 'center', marginBottom: 20}}>
-            <h2 style={{margin: 0, fontSize: '1.5rem'}}>训练报告</h2>
+            <h2 style={{margin: 0, fontSize: '1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8}}>
+   训练报告 <span style={{fontSize: '0.8rem', background: '#3b82f6', color: 'white', padding: '2px 8px', borderRadius: 12}}>{MODE_LABELS[activeMode]}</span>
+</h2>
             <div style={{color: '#64748b', margin: '8px 0', fontSize: '0.95rem'}}>
             {result.isVariable ? (
               <>Variable N ({result.variableDifficulty})</>
@@ -2876,10 +2787,32 @@ const saveResults = (overrideTrials?: number) => {
             <button className="btn btn-secondary" onClick={() => setShowHistory(true)} style={{padding: '6px 10px', fontSize: '0.9rem'}}>
               <History size={16} /> 记录
             </button>
+            <button className="btn btn-secondary" onClick={() => setShowGlobalHistory(true)} style={{padding: '6px 10px', fontSize: '0.9rem', color: '#0369a1'}}>
+              <Activity size={16} /> 综合
+            </button>
           </div>
         </header>
       )}
-
+      {/* 顶部模式导航 */}
+      {!isPlaying && (
+        <div style={{display: 'flex', gap: 8, padding: '0 4px 16px', maxWidth: 600, alignSelf: 'center', width: '100%'}}>
+          {Object.keys(MODE_LABELS).map(mKey => (
+             <button
+               key={mKey}
+               onClick={() => setActiveMode(mKey as PlayMode)}
+               style={{
+                  flex: 1, padding: '8px 0', borderRadius: '12px',
+                  background: activeMode === mKey ? '#3b82f6' : '#fff',
+                  color: activeMode === mKey ? 'white' : '#64748b',
+                  fontWeight: activeMode === mKey ? 700 : 500,
+                  border: activeMode === mKey ? 'none' : '1px solid #cbd5e1',
+                  boxShadow: activeMode === mKey ? '0 2px 4px rgba(59,130,246,0.3)' : 'none',
+                  cursor: 'pointer', transition: 'all 0.2s'
+               }}
+             >{MODE_LABELS[mKey as PlayMode]}</button>
+          ))}
+        </div>
+      )}
       {/* Cultivation Panel - Hidden during play */}
       {!isPlaying && (
         <div className="cultivation-card">
@@ -3657,6 +3590,72 @@ const saveResults = (overrideTrials?: number) => {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+      {/* Global Comprehensive History Modal */}
+      {showGlobalHistory && (
+        <div className="modal-overlay" onClick={() => setShowGlobalHistory(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{maxHeight: '90vh', display: 'flex', flexDirection: 'column'}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexShrink: 0}}>
+              <h2 style={{margin: 0, fontSize: '1.25rem', color: '#0369a1', display: 'flex', alignItems: 'center', gap: 6}}>
+                  <Activity size={20} /> 诸天综合卷宗
+              </h2>
+              <button style={{background: 'none', border: 'none', color: '#64748b', cursor: 'pointer'}} onClick={() => setShowGlobalHistory(false)}><X /></button>
+            </div>
+            <div style={{overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12, paddingRight: 4}}>
+              {(() => {
+                  const dayMap = new Map();
+                  Object.keys(masterData.modes).forEach(mKey => {
+                      masterData.modes[mKey].history.forEach((run: GameResult) => {
+                          const dStr = new Date(run.timestamp).toLocaleDateString('zh-CN');
+                          if (!dayMap.has(dStr)) dayMap.set(dStr, { totalTime: 0, modes: {} });
+                          const dData = dayMap.get(dStr);
+                          const rTime = run.sessionDuration || (run.totalTrials * run.interval);
+                          dData.totalTime += rTime;
+                          
+                          if (!dData.modes[mKey]) dData.modes[mKey] = { time: 0, startRun: run, endRun: run };
+                          const mData = dData.modes[mKey];
+                          mData.time += rTime;
+                          if (run.timestamp < mData.startRun.timestamp) mData.startRun = run;
+                          if (run.timestamp > mData.endRun.timestamp) mData.endRun = run;
+                      });
+                  });
+                  
+                  const sortedDays = Array.from(dayMap.entries()).sort((a,b) => new Date(b[0]).getTime() - new Date(a[0]).getTime());
+                  if (sortedDays.length === 0) return <div style={{textAlign:'center', color:'#94a3b8', padding: 30}}>大道无痕，暂无修炼记录</div>;
+                  
+                  return sortedDays.map(([dateStr, dData]) => (
+                      <div key={dateStr} style={{border: '1px solid #bae6fd', borderRadius: 12, overflow: 'hidden', boxShadow: '0 2px 4px rgba(0,0,0,0.02)'}}>
+                          <div style={{background: '#f0f9ff', padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #bae6fd'}}>
+                              <span style={{fontWeight: 700, color: '#0c4a6e', display: 'flex', alignItems: 'center', gap: 6}}>
+                                  <Calendar size={14} /> {dateStr}
+                              </span>
+                              <span style={{color: '#0284c7', fontSize: '0.85rem', fontWeight: 600}}>总修: {formatDuration(dData.totalTime)}</span>
+                          </div>
+                          <div style={{padding: '10px 12px', background: 'white', display: 'flex', flexDirection: 'column', gap: 8}}>
+                              {Object.keys(dData.modes).map(mKey => {
+                                  const mData = dData.modes[mKey];
+                                  const sRun = mData.startRun;
+                                  const eRun = mData.endRun;
+                                  const progressStr = formatProgressChange(sRun.realmLevel, sRun.stage, sRun.beforeXP, eRun.afterRealmLevel ?? eRun.realmLevel, eRun.afterStage ?? eRun.stage, eRun.afterXP, 'percent');
+                                  return (
+                                      <div key={mKey} style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem'}}>
+                                          <span style={{display: 'flex', alignItems: 'center', gap: 8}}>
+                                              <span style={{background: '#f1f5f9', color: '#475569', padding: '2px 8px', borderRadius: 12, fontSize: '0.75rem', fontWeight: 600, width: 56, textAlign: 'center'}}>
+                                                  {MODE_LABELS[mKey as PlayMode]}
+                                              </span>
+                                              <span style={{color: '#64748b'}}>{formatDuration(mData.time)}</span>
+                                          </span>
+                                          <span style={{color: '#0ea5e9', fontWeight: 500}}>{progressStr}</span>
+                                      </div>
+                                  );
+                              })}
+                          </div>
+                      </div>
+                  ));
+              })()}
+            </div>
           </div>
         </div>
       )}
