@@ -1972,23 +1972,12 @@ const saveResults = (overrideTrials?: number) => {
     const acquiredPills: Pill[] = [];
     const acquireLogs: string[] = [];
     
-    // Gacha Accumulation (真火凝聚)
+    // Gacha Accumulation (只积攒时间，不再自动发真火)
     const newGachaState = { ...gachaState };
-    // 容错兜底
     if (!newGachaState.fires) newGachaState.fires = { spirit: 0, focus: 0, foundation: 0, preservation: 0, heavenly: 0 };
-    if (!newGachaState.selectedFireTypes) newGachaState.selectedFireTypes =['spirit', 'focus', 'foundation', 'preservation', 'heavenly'];
+    if (!newGachaState.selectedFireTypes) newGachaState.selectedFireTypes = ['spirit', 'focus', 'foundation', 'preservation', 'heavenly'];
     
     newGachaState.accumulatedTime += sessionTime;
-    const reqTime = getFireReqTime(newGachaState.selectedFireTypes.length);
-
-    // 只要时间满足，就不断产出真火
-    while (newGachaState.accumulatedTime >= reqTime) {
-        newGachaState.accumulatedTime -= reqTime;
-        // 在选定的类型中随机掉落一种
-        const validTypes = newGachaState.selectedFireTypes;
-        const picked = validTypes[Math.floor(Math.random() * validTypes.length)] as PillType;
-        newGachaState.fires[picked] = (newGachaState.fires[picked] || 0) + 1;
-    }
     setGachaState(newGachaState);
 
     let bottleneckMultiplier = 2/3; // Default
@@ -2575,7 +2564,22 @@ const saveResults = (overrideTrials?: number) => {
     // **修改**: 实时更新 savedWeightsMap，这样切换时可以保存
     setSavedWeightsMap(prev => ({ ...prev, [n]: newW }));
   };
-  
+  // --- 凝聚真火 (手动开盲盒) ---
+  const handleClaimFire = () => {
+      setGachaState((prev: any) => {
+          const sel = prev.selectedFireTypes ||['spirit', 'focus', 'foundation', 'preservation', 'heavenly'];
+          const reqTime = getFireReqTime(sel.length);
+          if (prev.accumulatedTime >= reqTime) {
+              const picked = sel[Math.floor(Math.random() * sel.length)]; // 从选中的类型中随机给一个
+              return {
+                  ...prev,
+                  accumulatedTime: prev.accumulatedTime - reqTime,
+                  fires: { ...prev.fires, [picked]: (prev.fires[picked] || 0) + 1 }
+              };
+          }
+          return prev;
+      });
+  };
   const handleGachaDraw = () => {
     if (!gachaState.fires || (gachaState.fires[gachaTargetType] || 0) <= 0) return;
     
@@ -3045,7 +3049,15 @@ const saveResults = (overrideTrials?: number) => {
           <div style={{display: 'flex', gap: 8}}>
             <button className="btn btn-secondary" onClick={() => setShowGacha(true)} style={{position: 'relative',padding: '6px 10px', fontSize: '0.9rem', color: '#7c3aed'}}>
                 <Gift size={16} /> 坊市
-                {gachaState.availableDraws > 0 && <span style={{background: '#ef4444', color: 'white', borderRadius: '50%', width: 14, height: 14, fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'absolute', top: -4, right: -4}}>{gachaState.availableDraws}</span>}
+                {(() => {
+                    const reqTime = getFireReqTime((gachaState.selectedFireTypes ||['spirit', 'focus', 'foundation', 'preservation', 'heavenly']).length);
+                    const claimable = Math.floor((gachaState.accumulatedTime || 0) / reqTime);
+                    return claimable > 0 ? (
+                        <span style={{background: '#ef4444', color: 'white', borderRadius: '50%', width: 16, height: 16, fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'absolute', top: -6, right: -6, fontWeight: 700, boxShadow: '0 2px 4px rgba(0,0,0,0.2)'}}>
+                            {claimable}
+                        </span>
+                    ) : null;
+                })()}
             </button>
             <button className="btn btn-secondary" onClick={() => setShowMilestones(true)} style={{padding: '6px 10px', fontSize: '0.9rem'}}>
               <Scroll size={16} /> 仙途
@@ -3651,14 +3663,58 @@ const saveResults = (overrideTrials?: number) => {
                                 )
                             })}
                         </div>
-                        {/* 进度条 */}
-                        <div style={{height: 6, background: '#fef3c7', borderRadius: 3, overflow: 'hidden', marginBottom: 4}}>
-                            <div style={{height: '100%', background: 'linear-gradient(90deg, #f59e0b, #ef4444)', width: `${((gachaState.accumulatedTime || 0) / getFireReqTime((gachaState.selectedFireTypes ||[]).length)) * 100}%`, transition: 'width 0.3s'}} />
-                        </div>
-                        <div style={{fontSize: '0.7rem', color: '#d97706', textAlign: 'right'}}>
-                            进度: {(gachaState.accumulatedTime / 60).toFixed(1)} / {getFireReqTime((gachaState.selectedFireTypes ||[]).length) / 60}m
-                        </div>
-                    </div>
+                        {/* 进度条与提取按钮 */}
+                        {(() => {
+                            const selTypes = gachaState.selectedFireTypes ||['spirit', 'focus', 'foundation', 'preservation', 'heavenly'];
+                            const reqTime = getFireReqTime(selTypes.length);
+                            const claimable = Math.floor((gachaState.accumulatedTime || 0) / reqTime);
+                            const progressPct = Math.min(100, ((gachaState.accumulatedTime || 0) / reqTime) * 100);
+
+                            return (
+                                <div style={{marginTop: 12}}>
+                                    <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6}}>
+                                        <div style={{fontSize: '0.75rem', color: '#b45309', fontWeight: 600}}>
+                                            凝聚进度: {((gachaState.accumulatedTime || 0) / 60).toFixed(1)} / {(reqTime / 60).toFixed(1)} 分钟
+                                        </div>
+                                        {claimable > 0 && (
+                                            <span style={{fontSize: '0.75rem', color: '#ef4444', fontWeight: 800}}>
+                                                可收取: {claimable} 朵
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div style={{display: 'flex', gap: 10, alignItems: 'center'}}>
+                                        {/* 进度条主体 */}
+                                        <div style={{flex: 1, height: 8, background: '#fef3c7', borderRadius: 4, overflow: 'hidden'}}>
+                                            <div style={{
+                                                height: '100%', 
+                                                background: claimable > 0 ? '#ef4444' : 'linear-gradient(90deg, #f59e0b, #ef4444)', 
+                                                width: \`\${progressPct}%\`, 
+                                                transition: 'width 0.3s'
+                                            }} />
+                                        </div>
+                                        {/* 提取按钮 */}
+                                        <button 
+                                            onClick={handleClaimFire}
+                                            disabled={claimable <= 0}
+                                            style={{
+                                                padding: '6px 12px',
+                                                borderRadius: '6px',
+                                                border: 'none',
+                                                background: claimable > 0 ? '#ef4444' : '#fcd34d',
+                                                color: claimable > 0 ? 'white' : '#b45309',
+                                                fontWeight: 800,
+                                                fontSize: '0.8rem',
+                                                cursor: claimable > 0 ? 'pointer' : 'not-allowed',
+                                                boxShadow: claimable > 0 ? '0 2px 6px rgba(239, 68, 68, 0.4)' : 'none',
+                                                transition: 'all 0.2s'
+                                            }}
+                                        >
+                                            收取真火
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })()}
 
                     {/* --- 炼制操作区 --- */}
                     <div style={{background: '#f8fafc', padding: 16, borderRadius: 12, border: '1px solid #e2e8f0', marginBottom: 24}}>
