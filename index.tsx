@@ -1159,7 +1159,11 @@ function getRealmBaseCoeff(idx: number): number {
 function calculateBaseScore(realm: number, subRealmIndex: number): number {
     return Math.pow(10, realm) * getRealmBaseCoeff(subRealmIndex);
 }
-
+// --- 补充缺失的函数 ---
+function getHeavenlyProbs() {
+    // 炸炉 70% | 人品 20% | 地品 8% | 天品 2%
+    return { fail: 0.70, human: 0.20, earth: 0.08, heaven: 0.02 };
+}
 // 将用户的 stage (0-7) 映射到丹药的 subRealm (0-4)
 function userStageToSubIndex(stage: number): number {
     if (stage <= 1) return 0; // 前期/前期巅峰
@@ -3769,10 +3773,10 @@ const saveResults = (overrideTrials?: number) => {
                                             </select>
                                         </div>
                                         <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6}}>
-                                            <div style={{background: '#f1f5f9', padding: '8px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#64748b'}}>下品</div><div style={{fontWeight: 800, color: '#334155'}}>{(probs.low * 100).toFixed(1)}%</div></div>
-                                            <div style={{background: '#e0f2fe', padding: '8px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#0369a1'}}>中品</div><div style={{fontWeight: 800, color: '#0284c7'}}>{(probs.mid * 100).toFixed(1)}%</div></div>
-                                            <div style={{background: '#fae8ff', padding: '8px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#a21caf'}}>上品</div><div style={{fontWeight: 800, color: '#d946ef'}}>{(probs.high * 100).toFixed(1)}%</div></div>
-                                            <div style={{background: '#fffbeb', padding: '8px 0', borderRadius: 6, border: '1px solid #fcd34d'}}><div style={{fontSize: '0.7rem', color: '#b45309'}}>极品</div><div style={{fontWeight: 800, color: '#d97706'}}>{(probs.peak * 100).toFixed(1)}%</div></div>
+                                            <div style={{background: '#f1f5f9', padding: '8px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.7rem', color: '#64748b'}}>下品</div><div style={{fontWeight: 800, color: '#334155'}}>{(probs.low * 100).toFixed(1)}%</div></div>
+                                            <div style={{background: '#e0f2fe', padding: '8px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.7rem', color: '#0369a1'}}>中品</div><div style={{fontWeight: 800, color: '#0284c7'}}>{(probs.mid * 100).toFixed(1)}%</div></div>
+                                            <div style={{background: '#fae8ff', padding: '8px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.7rem', color: '#a21caf'}}>上品</div><div style={{fontWeight: 800, color: '#d946ef'}}>{(probs.high * 100).toFixed(1)}%</div></div>
+                                            <div style={{background: '#fffbeb', padding: '8px 0', borderRadius: 6, border: '1px solid #fcd34d', textAlign: 'center'}}><div style={{fontSize: '0.7rem', color: '#b45309'}}>极品</div><div style={{fontWeight: 800, color: '#d97706'}}>{(probs.peak * 100).toFixed(1)}%</div></div>
                                         </div>
                                         <div style={{fontSize: '0.7rem', color: '#94a3b8', marginTop: 8}}>灵元丹不具危险，百分百成功出炉。</div>
                                     </>
@@ -3786,14 +3790,15 @@ const saveResults = (overrideTrials?: number) => {
                                             目标区间：当前等级 ~ 高四级
                                         </div>
                                         <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 6}}>
-                                            <div style={{background: '#fee2e2', padding: '6px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#b91c1c'}}>炸炉 (失败)</div><div style={{fontWeight: 800, color: '#991b1b'}}>65.0%</div></div>
-                                            <div style={{background: '#f1f5f9', padding: '6px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#64748b'}}>同阶</div><div style={{fontWeight: 800, color: '#334155'}}>20.0%</div></div>
-                                            <div style={{background: '#e0f2fe', padding: '6px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#0369a1'}}>高1阶</div><div style={{fontWeight: 800, color: '#0284c7'}}>10.0%</div></div>
+                                            {/* 加 textAlign: 'center' */}
+                                            <div style={{background: '#fee2e2', padding: '6px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.7rem', color: '#b91c1c'}}>炸炉 (失败)</div><div style={{fontWeight: 800, color: '#991b1b'}}>65.0%</div></div>
+                                            <div style={{background: '#f1f5f9', padding: '6px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.7rem', color: '#64748b'}}>同阶</div><div style={{fontWeight: 800, color: '#334155'}}>20.0%</div></div>
+                                            <div style={{background: '#e0f2fe', padding: '6px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.7rem', color: '#0369a1'}}>高1阶</div><div style={{fontWeight: 800, color: '#0284c7'}}>10.0%</div></div>
                                         </div>
                                         <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6}}>
-                                            <div style={{background: '#fae8ff', padding: '6px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#a21caf'}}>高2阶</div><div style={{fontWeight: 800, color: '#d946ef'}}>3.5%</div></div>
-                                            <div style={{background: '#fef3c7', padding: '6px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#b45309'}}>高3阶</div><div style={{fontWeight: 800, color: '#d97706'}}>1.0%</div></div>
-                                            <div style={{background: '#ffedd5', padding: '6px 0', borderRadius: 6, border: '1px solid #fb923c'}}><div style={{fontSize: '0.7rem', color: '#9a3412'}}>高4阶 (神迹)</div><div style={{fontWeight: 800, color: '#c2410c'}}>0.5%</div></div>
+                                            <div style={{background: '#fae8ff', padding: '6px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.7rem', color: '#a21caf'}}>高2阶</div><div style={{fontWeight: 800, color: '#d946ef'}}>3.5%</div></div>
+                                            <div style={{background: '#fef3c7', padding: '6px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.7rem', color: '#b45309'}}>高3阶</div><div style={{fontWeight: 800, color: '#d97706'}}>1.0%</div></div>
+                                            <div style={{background: '#ffedd5', padding: '6px 0', borderRadius: 6, border: '1px solid #fb923c', textAlign: 'center'}}><div style={{fontSize: '0.7rem', color: '#9a3412'}}>高4阶 (神迹)</div><div style={{fontWeight: 800, color: '#c2410c'}}>0.5%</div></div>
                                         </div>
                                         <div style={{fontSize: '0.7rem', color: '#94a3b8', marginTop: 8}}>风险极高，但有望炼出跨大境界神药。</div>
                                     </>
@@ -3807,11 +3812,11 @@ const saveResults = (overrideTrials?: number) => {
                                             目标区间：低二级 ~ 高一级
                                         </div>
                                         <div style={{display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 4}}>
-                                            <div style={{background: '#fee2e2', padding: '8px 0', borderRadius: 6}}><div style={{fontSize: '0.65rem', color: '#b91c1c'}}>炸炉</div><div style={{fontWeight: 700, fontSize: '0.75rem', color: '#991b1b'}}>50%</div></div>
-                                            <div style={{background: '#f1f5f9', padding: '8px 0', borderRadius: 6}}><div style={{fontSize: '0.65rem', color: '#64748b'}}>低2阶</div><div style={{fontWeight: 700, fontSize: '0.75rem', color: '#334155'}}>30%</div></div>
-                                            <div style={{background: '#e0f2fe', padding: '8px 0', borderRadius: 6}}><div style={{fontSize: '0.65rem', color: '#0369a1'}}>低1阶</div><div style={{fontWeight: 700, fontSize: '0.75rem', color: '#0284c7'}}>12%</div></div>
-                                            <div style={{background: '#dcfce7', padding: '8px 0', borderRadius: 6}}><div style={{fontSize: '0.65rem', color: '#15803d'}}>同阶</div><div style={{fontWeight: 700, fontSize: '0.75rem', color: '#166534'}}>5%</div></div>
-                                            <div style={{background: '#fef3c7', padding: '8px 0', borderRadius: 6}}><div style={{fontSize: '0.65rem', color: '#b45309'}}>高1阶</div><div style={{fontWeight: 700, fontSize: '0.75rem', color: '#d97706'}}>3%</div></div>
+                                            <div style={{background: '#fee2e2', padding: '8px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.65rem', color: '#b91c1c'}}>炸炉</div><div style={{fontWeight: 700, fontSize: '0.75rem', color: '#991b1b'}}>50%</div></div>
+                                            <div style={{background: '#f1f5f9', padding: '8px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.65rem', color: '#64748b'}}>低2阶</div><div style={{fontWeight: 700, fontSize: '0.75rem', color: '#334155'}}>30%</div></div>
+                                            <div style={{background: '#e0f2fe', padding: '8px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.65rem', color: '#0369a1'}}>低1阶</div><div style={{fontWeight: 700, fontSize: '0.75rem', color: '#0284c7'}}>12%</div></div>
+                                            <div style={{background: '#dcfce7', padding: '8px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.65rem', color: '#15803d'}}>同阶</div><div style={{fontWeight: 700, fontSize: '0.75rem', color: '#166534'}}>5%</div></div>
+                                            <div style={{background: '#fef3c7', padding: '8px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.65rem', color: '#b45309'}}>高1阶</div><div style={{fontWeight: 700, fontSize: '0.75rem', color: '#d97706'}}>3%</div></div>
                                         </div>
                                         <div style={{fontSize: '0.7rem', color: '#94a3b8', marginTop: 8}}>主要用于炼制低阶保底药效。</div>
                                     </>
@@ -3841,14 +3846,14 @@ const saveResults = (overrideTrials?: number) => {
                                                 炼制方差: σ² = {variance.toFixed(2)} ({ratio.toFixed(2)}x 跨度)
                                             </div>
                                             <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginBottom: 6}}>
-                                                <div style={{background: '#fee2e2', padding: '6px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#b91c1c'}}>炸炉</div><div style={{fontWeight: 800, color: '#991b1b'}}>{(probs.fail * 100).toFixed(1)}%</div></div>
-                                                <div style={{background: '#f1f5f9', padding: '6px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#64748b'}}>次品</div><div style={{fontWeight: 800, color: '#334155'}}>{(probs.def * 100).toFixed(1)}%</div></div>
-                                                <div style={{background: '#e0f2fe', padding: '6px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#0369a1'}}>成品</div><div style={{fontWeight: 800, color: '#0284c7'}}>{(probs.fin * 100).toFixed(1)}%</div></div>
+                                                <div style={{background: '#fee2e2', padding: '6px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.7rem', color: '#b91c1c'}}>炸炉</div><div style={{fontWeight: 800, color: '#991b1b'}}>{(probs.fail * 100).toFixed(1)}%</div></div>
+                                                <div style={{background: '#f1f5f9', padding: '6px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.7rem', color: '#64748b'}}>次品</div><div style={{fontWeight: 800, color: '#334155'}}>{(probs.def * 100).toFixed(1)}%</div></div>
+                                                <div style={{background: '#e0f2fe', padding: '6px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.7rem', color: '#0369a1'}}>成品</div><div style={{fontWeight: 800, color: '#0284c7'}}>{(probs.fin * 100).toFixed(1)}%</div></div>
                                             </div>
                                             <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6}}>
-                                                <div style={{background: '#dcfce7', padding: '6px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#15803d'}}>精品</div><div style={{fontWeight: 800, color: '#166534'}}>{(probs.fine * 100).toFixed(1)}%</div></div>
-                                                <div style={{background: '#fae8ff', padding: '6px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#a21caf'}}>珍品</div><div style={{fontWeight: 800, color: '#d946ef'}}>{(probs.rare * 100).toFixed(1)}%</div></div>
-                                                <div style={{background: '#fffbeb', padding: '6px 0', borderRadius: 6, border: '1px solid #fcd34d'}}><div style={{fontSize: '0.7rem', color: '#b45309'}}>孤品</div><div style={{fontWeight: 800, color: '#d97706'}}>{(probs.uni * 100).toFixed(1)}%</div></div>
+                                                <div style={{background: '#dcfce7', padding: '6px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.7rem', color: '#15803d'}}>精品</div><div style={{fontWeight: 800, color: '#166534'}}>{(probs.fine * 100).toFixed(1)}%</div></div>
+                                                <div style={{background: '#fae8ff', padding: '6px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.7rem', color: '#a21caf'}}>珍品</div><div style={{fontWeight: 800, color: '#d946ef'}}>{(probs.rare * 100).toFixed(1)}%</div></div>
+                                                <div style={{background: '#fffbeb', padding: '6px 0', borderRadius: 6, border: '1px solid #fcd34d', textAlign: 'center'}}><div style={{fontSize: '0.7rem', color: '#b45309'}}>孤品</div><div style={{fontWeight: 800, color: '#d97706'}}>{(probs.uni * 100).toFixed(1)}%</div></div>
                                             </div>
                                         </div>
                                     </>
@@ -3863,10 +3868,10 @@ const saveResults = (overrideTrials?: number) => {
                                             目标: {REALMS[cultivation.realmLevel + 1]}·通天渡厄丹
                                         </div>
                                         <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6}}>
-                                            <div style={{background: '#fee2e2', padding: '8px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#b91c1c'}}>炸炉</div><div style={{fontWeight: 800, color: '#991b1b'}}>{(probs.fail * 100).toFixed(0)}%</div></div>
-                                            <div style={{background: '#f1f5f9', padding: '8px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#64748b'}}>人品</div><div style={{fontWeight: 800, color: '#334155'}}>{(probs.human * 100).toFixed(0)}%</div></div>
-                                            <div style={{background: '#e0f2fe', padding: '8px 0', borderRadius: 6}}><div style={{fontSize: '0.7rem', color: '#0369a1'}}>地品</div><div style={{fontWeight: 800, color: '#0284c7'}}>{(probs.earth * 100).toFixed(0)}%</div></div>
-                                            <div style={{background: '#fffbeb', padding: '8px 0', borderRadius: 6, border: '1px solid #fcd34d'}}><div style={{fontSize: '0.7rem', color: '#b45309'}}>天品</div><div style={{fontWeight: 800, color: '#d97706'}}>{(probs.heaven * 100).toFixed(0)}%</div></div>
+                                            <div style={{background: '#fee2e2', padding: '8px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.7rem', color: '#b91c1c'}}>炸炉</div><div style={{fontWeight: 800, color: '#991b1b'}}>{(probs.fail * 100).toFixed(0)}%</div></div>
+                                            <div style={{background: '#f1f5f9', padding: '8px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.7rem', color: '#64748b'}}>人品</div><div style={{fontWeight: 800, color: '#334155'}}>{(probs.human * 100).toFixed(0)}%</div></div>
+                                            <div style={{background: '#e0f2fe', padding: '8px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.7rem', color: '#0369a1'}}>地品</div><div style={{fontWeight: 800, color: '#0284c7'}}>{(probs.earth * 100).toFixed(0)}%</div></div>
+                                            <div style={{background: '#fffbeb', padding: '8px 0', borderRadius: 6, border: '1px solid #fcd34d', textAlign: 'center'}}><div style={{fontSize: '0.7rem', color: '#b45309'}}>天品</div><div style={{fontWeight: 800, color: '#d97706'}}>{(probs.heaven * 100).toFixed(0)}%</div></div>
                                         </div>
                                         <div style={{fontSize: '0.7rem', color: '#94a3b8', marginTop: 12}}>极易遭受天谴炸炉。成功后随机赋予天地人三品。</div>
                                     </>
