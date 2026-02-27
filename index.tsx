@@ -1617,45 +1617,41 @@ const Game = () => {
           const data = JSON.parse(ev.target?.result as string);
           
           if (data.modes && data.gachaState) {
-              // 1. 导入新的全聚合多模式存档
+              // 1. 如果是“大 JSON”（包含 modes 字段），一次性覆盖所有模式！
               setMasterData(data);
-              alert('天道多模式数据导入成功！');
+              alert('天道多模式数据（完整存档）导入成功！');
           } else if (data.history && data.cultivation) {
-              // 2. 核心功能：兼容导入你原来的“旧版单模式存档”
-              // 自动将数据塞入你当前页面顶部选中的模式里！
+              // 2. 如果是“老版单模式存档”，只注入当前选中的模式
               setMasterData(prev => ({
                   ...prev,
                   modes: {
                       ...prev.modes,
                       [activeMode]: {
                           ...prev.modes[activeMode],
-                          history: data.history, // 100% 无损导入所有历史记录
+                          history: data.history,
                           cultivation: data.cultivation,
-                          milestones: data.milestones ||[], // 100% 无损导入完整仙途
-                          inventory: data.inventory || [],
+                          milestones: data.milestones ||[],
+                          inventory: data.inventory ||[],
                           settings: { ...prev.modes[activeMode].settings, ...(data.settings || {}) },
                           savedWeightsMap: data.savedWeightsMap || {}
                       }
                   },
-                  // 真火进度自动取历史最大值，不会倒退
                   gachaState: {
                       accumulatedTime: Math.max(prev.gachaState.accumulatedTime, data.gachaState?.accumulatedTime || 0),
                       availableDraws: Math.max(prev.gachaState.availableDraws, data.gachaState?.availableDraws || 0)
                   }
               }));
-              alert(`已成功将存档无损注入至【${MODE_LABELS[activeMode]}】模式！\n完整的历史记录和仙途已恢复。`);
+              alert(`已成功将老存档无损注入至【${MODE_LABELS[activeMode]}】模式！`);
           } else {
               alert('存档文件格式不符！');
           }
       } catch (err) {
           alert('存档文件解析失败，请检查文件是否完整');
       }
-      // 清空 input 状态，允许重复上传同一个文件
       if (fileInputRef.current) fileInputRef.current.value = '';
     };
     reader.readAsText(file);
   };
-
   // **修改**：当 N 改变时，尝试从 savedWeightsMap 恢复权重，否则重置
   useEffect(() => {
     if (savedWeightsMap[n]) {
@@ -3732,31 +3728,49 @@ const saveResults = (overrideTrials?: number) => {
                   
                   return sortedDays.map(([dateStr, dData]) => (
                       <div key={dateStr} style={{border: '1px solid #bae6fd', borderRadius: 12, overflow: 'hidden', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', marginBottom: 12}}>
+                          {/* 标题栏 */}
                           <div style={{background: '#f0f9ff', padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #bae6fd'}}>
                               <span style={{fontWeight: 700, color: '#0c4a6e', display: 'flex', alignItems: 'center', gap: 6}}>
                                   <Calendar size={14} /> {dateStr}
                               </span>
                               <span style={{color: '#0284c7', fontSize: '0.85rem', fontWeight: 600}}>总修: {formatDuration(dData.totalTime)}</span>
                           </div>
-                          <div style={{padding: '10px 12px', background: 'white', display: 'flex', flexDirection: 'column', gap: 8}}>
-                              {Object.keys(dData.modes).map(mKey => {
-                                  const mData = dData.modes[mKey];
-                                  const sRun = mData.startRun;
-                                  const eRun = mData.endRun;
-                                  const progressStr = formatProgressChange(sRun.realmLevel, sRun.stage, sRun.beforeXP, eRun.afterRealmLevel ?? eRun.realmLevel, eRun.afterStage ?? eRun.stage, eRun.afterXP, 'percent');
-                                  return (
-                                      <div key={mKey} style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem'}}>
-                                          <span style={{display: 'flex', alignItems: 'center', gap: 8}}>
-                                              <span style={{background: '#f1f5f9', color: '#475569', padding: '2px 8px', borderRadius: 12, fontSize: '0.75rem', fontWeight: 600, width: 64, textAlign: 'center'}}>
-                                                  {MODE_LABELS[mKey as PlayMode]}
+                          
+                          {/* 内容栏（修复了不显示的问题） */}
+                          {Object.keys(dData.modes).length > 0 && (
+                              <div style={{padding: '10px 12px', background: 'white', display: 'flex', flexDirection: 'column', gap: 10}}>
+                                  {Object.keys(dData.modes).map(mKey => {
+                                      const mData = dData.modes[mKey];
+                                      const sRun = mData.startRun;
+                                      const eRun = mData.endRun;
+                                      
+                                      // 兼容某些模式可能没有记录 beforeXP 的情况
+                                      const sXP = sRun.beforeXP !== undefined ? sRun.beforeXP : sRun.score;
+                                      const eXP = eRun.afterXP !== undefined ? eRun.afterXP : eRun.score;
+
+                                      const progressStr = formatProgressChange(
+                                          sRun.realmLevel, sRun.stage, sXP, 
+                                          eRun.afterRealmLevel ?? eRun.realmLevel, eRun.afterStage ?? eRun.stage, eXP, 
+                                          'percent'
+                                      );
+
+                                      return (
+                                          <div key={mKey} style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem'}}>
+                                              <span style={{display: 'flex', alignItems: 'center', gap: 8}}>
+                                                  {/* 修正了显示长度和背景颜色 */}
+                                                  <span style={{background: '#f1f5f9', color: '#475569', padding: '4px 8px', borderRadius: 6, fontSize: '0.75rem', fontWeight: 600, minWidth: 60, textAlign: 'center'}}>
+                                                      {MODE_LABELS[mKey as PlayMode]}
+                                                  </span>
+                                                  <span style={{color: '#64748b', fontWeight: 500}}>{formatDuration(mData.time)}</span>
                                               </span>
-                                              <span style={{color: '#64748b'}}>{formatDuration(mData.time)}</span>
-                                          </span>
-                                          <span style={{color: '#0ea5e9', fontWeight: 500}}>{progressStr}</span>
-                                      </div>
-                                  );
-                              })}
-                          </div>
+                                              <span style={{color: '#0ea5e9', fontWeight: 600, background: '#f0f9ff', padding: '2px 6px', borderRadius: 4}}>
+                                                  {progressStr}
+                                              </span>
+                                          </div>
+                                      );
+                                  })}
+                              </div>
+                          )}
                       </div>
                   ));
               })()}
