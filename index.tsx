@@ -1610,30 +1610,48 @@ const Game = () => {
 
   const handleImportData = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
-      const data = JSON.parse(ev.target?.result as string);
-      if (data.modes && data.gachaState) {
-          setMasterData(data);
-          alert('天道数据导入成功！');
-      } else {
-          alert('存档文件格式不符！请使用新版多模式存档。');
-      }
-      /*
       try {
-        const data = JSON.parse(ev.target?.result as string);
-        if (data.history) setHistory(data.history);
-        if (data.cultivation) setCultivation(data.cultivation);
-        if (data.milestones) setMilestones(data.milestones);
-        if (data.inventory) setInventory(data.inventory);
-        if (data.gachaState) setGachaState(data.gachaState);
-        if (data.savedWeightsMap) setSavedWeightsMap(data.savedWeightsMap);
-        alert('存档导入成功！');
+          const data = JSON.parse(ev.target?.result as string);
+          
+          if (data.modes && data.gachaState) {
+              // 1. 导入新的全聚合多模式存档
+              setMasterData(data);
+              alert('天道多模式数据导入成功！');
+          } else if (data.history && data.cultivation) {
+              // 2. 核心功能：兼容导入你原来的“旧版单模式存档”
+              // 自动将数据塞入你当前页面顶部选中的模式里！
+              setMasterData(prev => ({
+                  ...prev,
+                  modes: {
+                      ...prev.modes,
+                      [activeMode]: {
+                          ...prev.modes[activeMode],
+                          history: data.history, // 100% 无损导入所有历史记录
+                          cultivation: data.cultivation,
+                          milestones: data.milestones ||[], // 100% 无损导入完整仙途
+                          inventory: data.inventory || [],
+                          settings: { ...prev.modes[activeMode].settings, ...(data.settings || {}) },
+                          savedWeightsMap: data.savedWeightsMap || {}
+                      }
+                  },
+                  // 真火进度自动取历史最大值，不会倒退
+                  gachaState: {
+                      accumulatedTime: Math.max(prev.gachaState.accumulatedTime, data.gachaState?.accumulatedTime || 0),
+                      availableDraws: Math.max(prev.gachaState.availableDraws, data.gachaState?.availableDraws || 0)
+                  }
+              }));
+              alert(`已成功将存档无损注入至【${MODE_LABELS[activeMode]}】模式！\n完整的历史记录和仙途已恢复。`);
+          } else {
+              alert('存档文件格式不符！');
+          }
       } catch (err) {
-        alert('存档文件无效');
-      }*/
+          alert('存档文件解析失败，请检查文件是否完整');
+      }
+      // 清空 input 状态，允许重复上传同一个文件
+      if (fileInputRef.current) fileInputRef.current.value = '';
     };
     reader.readAsText(file);
   };
