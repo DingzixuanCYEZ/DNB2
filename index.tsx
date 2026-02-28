@@ -2162,7 +2162,8 @@ const saveResults = (overrideTrials?: number) => {
                         });
                         
                         const usedScore = Math.max(pureOriginalScore, refinedScoreFocus);
-                        acquireLogs.push(`凝神机缘: M=${mFocus.toFixed(2)}x。原分 ${pureOriginalScore.toFixed(0)} -> 质变 ${refinedScoreFocus.toFixed(0)}。最高匹配: ${usedScore.toFixed(0)} >= ${threshold.toFixed(0)} (${REALMS[r]}${names[l.sub]}${g==='real'?'实品':'虚品'}要求/3)`);
+                        // 【修复】：将 REALMS[r] 改为 (MODE_REALMS[activeMode] || MODE_REALMS['intuition'])[r]
+acquireLogs.push(`凝神机缘: M=${mFocus.toFixed(2)}x。原分 ${pureOriginalScore.toFixed(0)} -> 质变 ${refinedScoreFocus.toFixed(0)}。最高匹配: ${usedScore.toFixed(0)} >= ${threshold.toFixed(0)} (${(MODE_REALMS[activeMode] || MODE_REALMS['intuition'])[r]}${names[l.sub]}${g==='real'?'实品':'虚品'}要求/3)`);
                     }
                     focusFound = true;
                     break; 
@@ -2203,7 +2204,8 @@ const saveResults = (overrideTrials?: number) => {
                     });
                     
                     const usedScore = Math.max(pureOriginalScore, refinedScoreFound);
-                    acquireLogs.push(`护基机缘: M=${mFound.toFixed(2)}x。原分 ${pureOriginalScore.toFixed(0)} -> 质变 ${refinedScoreFound.toFixed(0)}。最高匹配: ${usedScore.toFixed(0)} >= ${threshold.toFixed(0)} (${REALMS[r]}${names[l.sub]}${g==='real'?'实品':'虚品'}要求)`);
+                    // 【修复】：同样替换 REALMS[r]
+acquireLogs.push(`护基机缘: M=${mFound.toFixed(2)}x。原分 ${pureOriginalScore.toFixed(0)} -> 质变 ${refinedScoreFound.toFixed(0)}。最高匹配: ${usedScore.toFixed(0)} >= ${threshold.toFixed(0)} (${(MODE_REALMS[activeMode] || MODE_REALMS['intuition'])[r]}${names[l.sub]}${g==='real'?'实品':'虚品'}要求)`);
                 }
                 foundationFound = true;
                 break; 
@@ -3906,7 +3908,7 @@ const saveResults = (overrideTrials?: number) => {
                                             <span style={{fontSize: '0.85rem', alignSelf: 'center'}}>炼制 N =</span>
                                             <select value={gachaTargetRealm} onChange={e => setGachaTargetRealm(parseInt(e.target.value))} style={{padding: '6px 12px', borderRadius: 8, border: '1px solid #cbd5e1', outline: 'none', fontWeight: 600, background: 'white'}}>
                                                 {Array.from({length: cultivation.realmLevel + 2}).map((_, i) => (
-                                                    <option key={i+1} value={i+1}>{i+1} ({currentrealms[i+1] || '未知'})</option>
+                                                    <option key={i+1} value={i+1}>{i+1} ({currentRealms[i+1] || '未知'})</option>
                                                 ))}
                                             </select>
                                         </div>
