@@ -10,8 +10,13 @@ const DEFAULT_N = 2;
 const BASE_ROUNDS = 20;
 const DEFAULT_INTERVAL = 3.0;
 const DEFAULT_DISPLAY_TIME = 0.5;
-
-const REALMS = ['', '锻体', '炼气', '筑基', '结丹', '元婴', '化神', '炼虚', '合体', '大乘', '渡劫'];
+const MODE_REALMS: Record<PlayMode, string[]> = {
+    memorize: ['', '蛮力', '铜皮', '铁骨', '玉髓', '金身', '霸体', '法相', '涅槃', '至尊', '不灭'],
+    intuition: ['', '锻体', '炼气', '筑基', '结丹', '元婴', '化神', '炼虚', '合体', '大乘', '渡劫'],
+    technique: ['', '素人', '童生', '秀才', '举人', '贡生', '进士', '翰林', '大学士', '大儒', '鸿儒', '文宗', '大贤', '半圣', '亚圣', '至圣'],
+    score: ['', '战士', '战将', '战神', '流星', '彗星', '卫星', '行星', '恒星', '星团', '星云', '星河', '星系', '星系群', '星系团', '星系长城', '宇宙']
+};
+//const REALMS = ['', '锻体', '炼气', '筑基', '结丹', '元婴', '化神', '炼虚', '合体', '大乘', '渡劫'];
 const STAGES = ['初期', '初期巅峰', '中期', '中期巅峰', '后期', '后期巅峰', '圆满', '大圆满'];
 type PlayMode = 'memorize' | 'intuition' | 'technique' | 'score';
 const MODE_LABELS: Record<PlayMode, string> = {
@@ -1163,9 +1168,12 @@ function getRealBreakthroughTarget(realm: number, sub: SubRealm): number {
     return getExpConstant(realm, sub, false);
 }
 
-function getFullStageName(realm: number, stage: number) {
+function getFullStageName(realm: number, stage: number, mode: PlayMode = activeMode) {
     if (realm === 0) return '凡人';
-    return `${REALMS[realm]}${STAGES[stage]}`;
+    const names = MODE_REALMS[mode] || MODE_REALMS['intuition'];
+    // 自动兼容不同长度：如果 realm 超过数组长度，锁定在最后一个等级
+    const realmName = names[realm] || names[names.length - 1] || '未知';
+    return `${realmName}期${STAGES[stage]}`;
 }
 // --- 新增：坊市炼丹概率数学模型 ---
 
@@ -1228,8 +1236,8 @@ function userStageToSubIndex(stage: number): number {
 // --- 新增：进度文本格式化函数 ---
 const getProgressStr = (realm?: number, stage?: number, xp?: number, mode: 'percent' | 'exact' = 'percent') => {
     if (realm === undefined || stage === undefined || xp === undefined) return '';
-    if (realm >= 10 || stage === 7) return ''; // 渡劫飞升 或 大圆满 无进度
-    
+    if (stage === 7) return ''; // 大圆满无进度
+
     const isBottleneck = stage === 1 || stage === 3 || stage === 5;
     const target = isBottleneck ? getBreakthroughTarget(realm, stage) : getMaxXP(realm, stage);
     const safeTarget = target > 0 ? target : 1;
@@ -1242,22 +1250,20 @@ const getProgressStr = (realm?: number, stage?: number, xp?: number, mode: 'perc
     }
 };
 
-const formatProgressChange = (sRealm?: number, sStage?: number, sXP?: number, eRealm?: number, eStage?: number, eXP?: number, mode: 'percent' | 'exact' = 'percent') => {
-    if (sRealm === undefined || sStage === undefined) return '记录缺失';
-    const sName = getFullStageName(sRealm, sStage);
-    const eName = getFullStageName(eRealm ?? sRealm, eStage ?? sStage);
+const formatProgressChange = (sR?: number, sS?: number, sXP?: number, eR?: number, eS?: number, eXP?: number, displayMode: 'percent' | 'exact' = 'percent', modeKey: PlayMode = activeMode) => {
+    if (sR === undefined || sS === undefined) return '记录缺失';
+    // 根据 modeKey 获取对应体系的名称
+    const sName = getFullStageName(sR, sS, modeKey);
+    const eName = getFullStageName(eR ?? sR, eS ?? sS, modeKey);
     
-    const sProg = getProgressStr(sRealm, sStage, sXP, mode);
-    const eProg = getProgressStr(eRealm ?? sRealm, eStage ?? sStage, eXP, mode);
-
-    const sPart = sProg ? `${sName} ${sProg}` : sName;
-    const ePart = eProg ? `${eName} ${eProg}` : eName;
+    const sProg = getProgressStr(sR, sS, sXP, displayMode);
+    const eProg = getProgressStr(eR ?? sR, eS ?? sS, eXP, displayMode);
 
     if (sName === eName) {
-        if (!sProg && !eProg) return sName; // 兼容没有XP的老记录
+        if (!sProg && !eProg) return sName;
         return `${sName} ${sProg || '?'} -> ${eProg || '?'}`;
     } else {
-        return `${sPart} -> ${ePart}`;
+        return `${sName} ${sProg} -> ${eName} ${eProg}`;
     }
 };
 
@@ -1337,7 +1343,7 @@ const HistoryDayGroup: React.FC<HistoryDayGroupProps> = ({
                                     </div>
                                   <div style={{fontSize: '0.8rem', color: '#475569', marginBottom: 8, display: 'flex', alignItems: 'center'}}>
                                         <span style={{background: '#e0f2fe', color: '#0369a1', padding: '2px 6px', borderRadius: 4, fontSize: '0.75rem', fontWeight: 600}}>
-                                            {formatProgressChange(run.realmLevel, run.stage, run.beforeXP, run.afterRealmLevel ?? run.realmLevel, run.afterStage ?? run.stage, run.afterXP,'exact')}
+                                            {formatProgressChange(run.realmLevel, run.stage, run.beforeXP, run.afterRealmLevel ?? run.realmLevel, run.afterStage ?? run.stage, run.afterXP, 'exact', run.mode as PlayMode)}
                                         </span>
                                     </div>
                                     <div style={{marginBottom: 8}}>
@@ -2283,7 +2289,7 @@ const saveResults = (overrideTrials?: number) => {
                 id: Date.now().toString(),
                 timestamp: Date.now(),
                 type: 'major',
-                title: `渡劫成功！晋升${REALMS[realm + 1]}`,
+                title: `突破成功！晋升${getFullStageName(realm + 1, 0, activeMode).replace('前期', '')}`,
                 description: `从${STAGES[stage]}突破桎梏。获得初始经验 ${formatScore(inheritedXP)}。难度 N=${n}, 准确率 ${totalAccVal}% (要求 ${reqAcc}%)。`,
                 stageDuration: nextCultivation.stageStudyTime,
                 totalDuration: nextCultivation.totalStudyTime,
@@ -2314,7 +2320,7 @@ const saveResults = (overrideTrials?: number) => {
           id: Date.now().toString(),
           timestamp: Date.now(),
           type: 'peak',
-          title: `到达${REALMS[realm]}${stage === 6 ? '大圆满' : STAGES[stage]+'巅峰'}`,
+          title: `到达${getFullStageName(realm, stage, activeMode).replace('前期', '')}${stage === 6 ? '大圆满' : '巅峰'}`,
           // 【修改处】详细列出：当前积累总分 / 目标分数
           description: `修为积累圆满 (当前: ${formatScore(nextCultivation.currentXP)} / 目标: ${formatScore(maxXP)})。即将面临突破瓶颈。`,
           stageDuration: nextCultivation.stageStudyTime,
@@ -2373,7 +2379,7 @@ const saveResults = (overrideTrials?: number) => {
           id: Date.now().toString(),
           timestamp: Date.now(),
           type: 'minor',
-          title: `突破至${REALMS[realm]}${STAGES[stage + 1]}`,
+          title: `突破至${getFullStageName(realm, stage + 1, activeMode)}`,
           // 【修改处】详细列出：当前综合评分 / 目标评分
           description: `瓶颈突破成功！(当前: ${formatScore(newWeighted)} / 目标: ${formatScore(target)})。`,
           stageDuration: nextCultivation.stageStudyTime,
@@ -4302,7 +4308,8 @@ const saveResults = (overrideTrials?: number) => {
                         const progText = formatProgressChange(
                           sRun.realmLevel, sRun.stage, sRun.beforeXP,
                           eRun.afterRealmLevel ?? eRun.realmLevel, eRun.afterStage ?? eRun.stage, eRun.afterXP,
-                          'percent'
+                          'percent',
+                          mKey as PlayMode
                         );
 
                         return (
