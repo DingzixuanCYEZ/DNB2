@@ -909,8 +909,11 @@ function calculatePreservationProbs(variance: number) {
     return { fail: pFail, def: pDef, fin: pFin, fine: pFine, rare: pRare, uni: pUni };
 }
 // 丹药辅助函数
-function getPillName(pill: Pill): string {
-  const realmName = REALMS[pill.realm] || '未知';
+function getPillName(pill: Pill, mode: PlayMode = 'intuition'): string {
+  // 核心：根据 mode 获取境界名称列表
+  const realmList = MODE_REALMS[mode] || MODE_REALMS['intuition'];
+  const realmName = realmList[pill.realm] || '未知';
+  
   let subName = '';
   if (pill.subRealm !== undefined && pill.type !== 'heavenly') {
     const subNames = ['初期', '中期', '后期', '圆满', '大圆满'];
@@ -918,6 +921,7 @@ function getPillName(pill: Pill): string {
   }
 
   let gradeName = '';
+  // ... 品级判断逻辑保持不变 ...
   if (pill.type === 'focus' || pill.type === 'foundation') {
       gradeName = pill.grade === 'real' ? '实品' : '虚品';
   } else if (pill.type === 'preservation') {
@@ -936,15 +940,13 @@ function getPillName(pill: Pill): string {
       }
   }
 
-  // 命名格式修正：
-  // 如果有小境界(subName不为空)，则不加"期"，例如 "元婴中期"
-  // 如果无小境界，则加"期"，例如 "元婴期"
-  const realmPart = subName ? realmName : `${realmName}期`;
+  // 这里的命名逻辑也需要动态化
+  const realmPart = subName ? realmName : `${realmName}`; // 移除“期”，因为像“战将”后面加“期”很怪
 
   if (pill.type === 'heavenly') {
       return `${realmPart}·${gradeName}通天渡厄丹`;
   } else if (pill.type === 'preservation') {
-      return `${REALMS[pill.realm]}期·${gradeName}保元丹`;
+      return `${realmName}级·${gradeName}保元丹`; // 用“级”或者通用量词
   } else {
       const pName = pill.type === 'spirit' ? '灵元丹' : pill.type === 'focus' ? '凝神丹' : '护基丹';
       return `${realmPart}${subName}·${gradeName}${pName}`;
@@ -1168,12 +1170,13 @@ function getRealBreakthroughTarget(realm: number, sub: SubRealm): number {
     return getExpConstant(realm, sub, false);
 }
 
-function getFullStageName(realm: number, stage: number, mode: PlayMode = activeMode) {
+function getFullStageName(realm: number, stage: number, mode: PlayMode = 'intuition') {
     if (realm === 0) return '凡人';
+    // 动态获取当前模式的境界列表
     const names = MODE_REALMS[mode] || MODE_REALMS['intuition'];
-    // 自动兼容不同长度：如果 realm 超过数组长度，锁定在最后一个等级
+    // 防止越界
     const realmName = names[realm] || names[names.length - 1] || '未知';
-    return `${realmName}期${STAGES[stage]}`;
+    return `${realmName}${STAGES[stage]}`; 
 }
 // --- 新增：坊市炼丹概率数学模型 ---
 
@@ -1250,12 +1253,11 @@ const getProgressStr = (realm?: number, stage?: number, xp?: number, mode: 'perc
     }
 };
 
-const formatProgressChange = (sR?: number, sS?: number, sXP?: number, eR?: number, eS?: number, eXP?: number, displayMode: 'percent' | 'exact' = 'percent', modeKey: PlayMode = activeMode) => {
+const formatProgressChange = (sR?: number, sS?: number, sXP?: number, eR?: number, eS?: number, eXP?: number, displayMode: 'percent' | 'exact' = 'percent', modeKey: PlayMode = 'intuition') => {
     if (sR === undefined || sS === undefined) return '记录缺失';
-    // 根据 modeKey 获取对应体系的名称
     const sName = getFullStageName(sR, sS, modeKey);
     const eName = getFullStageName(eR ?? sR, eS ?? sS, modeKey);
-    
+    // ... 后面逻辑不变 ...
     const sProg = getProgressStr(sR, sS, sXP, displayMode);
     const eProg = getProgressStr(eR ?? sR, eS ?? sS, eXP, displayMode);
 
@@ -1353,7 +1355,7 @@ const HistoryDayGroup: React.FC<HistoryDayGroupProps> = ({
                                         {/* 消耗丹药及效果 */}
                                         {run.pillUsed && (
                                             <div style={{fontSize: '0.75rem', color: '#7c3aed', background: '#f5f3ff', padding: '4px 8px', borderRadius: 4}}>
-                                                <span style={{fontWeight: 'bold'}}>服用: {getPillName(run.pillUsed)}</span>
+                                                <span style={{fontWeight: 'bold'}}>服用: {getPillName(run.pillUsed, run.mode as PlayMode)}</span>
                                                 {run.pillEffectLog && <span style={{marginLeft: 6, opacity: 0.8}}>- {run.pillEffectLog}</span>}
                                             </div>
                                         )}
@@ -1375,7 +1377,9 @@ const HistoryDayGroup: React.FC<HistoryDayGroupProps> = ({
                                     </div>
                                     {run.pillAcquired && run.pillAcquired.length > 0 && (
                                         <div style={{marginTop: 6, fontSize: '0.75rem', color: '#059669', background: '#ecfdf5', padding: '6px 8px', borderRadius: 4}}>
-                                            <div style={{fontWeight: 'bold', marginBottom: 2}}>获得丹药: {run.pillAcquired.map(p => getPillName(p)).join(', ')}</div>
+                                            <div style={{fontWeight: 'bold', marginBottom: 2}}>
+                                                获得丹药: {run.pillAcquired.map(p => getPillName(p, run.mode as PlayMode)).join(', ')}
+                                            </div>
                                             {/* 渲染获得原因 */}
                                             {run.acquireLogs && run.acquireLogs.map((log, i) => (
                                                 <div key={i} style={{opacity: 0.85}}>• {log}</div>
@@ -1603,7 +1607,8 @@ const Game = () => {
   // ... 上面是 const { n, interval ... } = currentMode.settings;
 
   // 【修复开始】补回这些丢失的衍生变量
-  const realmName = REALMS[cultivation.realmLevel] || '未知';
+  const currentRealms = MODE_REALMS[activeMode] || MODE_REALMS['intuition'];
+  const realmName = currentRealms[cultivation.realmLevel] || '未知';
   const stageName = STAGES[cultivation.stage] || '';
   const isBottleneck = [1, 3, 5].includes(cultivation.stage);
   const isGreatPerfect = cultivation.stage === 7;
@@ -2820,7 +2825,8 @@ const saveResults = (overrideTrials?: number) => {
             {result.pillUsed && (
                 <div className="summary-item" style={{background: '#f5f3ff', borderColor: '#ddd6fe'}}>
                     <div style={{fontWeight: 700, color: '#7c3aed', marginBottom: 4}}>丹药消耗</div>
-                    <div style={{fontSize: '0.9rem'}}>{getPillName(result.pillUsed)}</div>
+                    {/* 【修改】传入 result.mode */}
+                    <div style={{fontSize: '0.9rem'}}>{getPillName(result.pillUsed, result.mode as PlayMode)}</div>
                     <div style={{fontSize: '0.8rem', color: '#5b21b6', marginTop: 4}}>{result.pillEffectLog}</div>
                 </div>
             )}
@@ -2832,7 +2838,7 @@ const saveResults = (overrideTrials?: number) => {
                         <div key={i} style={{fontSize: '0.85rem', marginBottom: 4, color: '#065f46', lineHeight: 1.4}}>• {log}</div>
                     ))}
                     <div style={{marginTop: 6, fontWeight: 700, fontSize: '0.85rem', color: '#059669'}}>
-                        已收入储物袋：{result.pillAcquired?.map(p => getPillName(p)).join(', ')}
+                        已收入储物袋：{result.pillAcquired?.map(p => getPillName(p, result.mode as PlayMode)).join(', ')}
                     </div>
                 </div>
             )}
@@ -3195,7 +3201,7 @@ const saveResults = (overrideTrials?: number) => {
                     <div style={{display: 'flex', alignItems: 'center', gap: 8}}>
                         <Briefcase size={18} color="#64748b" />
                         {selectedPillObj ? (
-                            <span style={{fontWeight: 600, color: '#4f46e5'}}>{getPillName(selectedPillObj)}</span>
+                            <span style={{fontWeight: 600, color: '#4f46e5'}}>{getPillName(selectedPillObj, activeMode)}</span>
                         ) : (
                             <span style={{color: '#94a3b8'}}>未选择丹药 (点击选择)</span>
                         )}
@@ -3637,7 +3643,8 @@ const saveResults = (overrideTrials?: number) => {
                                     
                                     <div>
                                         <div style={{fontWeight: 600, fontSize: '0.95rem', display: 'flex', alignItems: 'center'}}>
-                                            {getPillName(stack)}
+                                            {/* 传入 activeMode，这样在“刷分”模式下就显示“卫星级·灵元丹” */}
+                                            {getPillName(stack, activeMode)} 
                                             <span className={`pill-tag ${getPillTagClass(stack.type)}`}>
                                                 {stack.type === 'spirit' ? '经验' : stack.type === 'focus' ? '冲关' : stack.type === 'foundation' ? '护基' : stack.type === 'preservation' ? '保元' : '渡劫'}
                                             </span>
@@ -3820,8 +3827,13 @@ const saveResults = (overrideTrials?: number) => {
                                 return (
                                     <>
                                         <div style={{display: 'flex', gap: 12, justifyContent: 'center', marginBottom: 16}}>
-                                            <select value={gachaTargetRealm} onChange={(e) => { setGachaTargetRealm(parseInt(e.target.value)); setGachaTargetSub(0); }} style={{padding: '6px', borderRadius: 6, border: '1px solid #cbd5e1', outline: 'none'}}>
-                                                {Array.from({length: Math.max(1, cultivation.realmLevel)}).map((_, i) => <option key={i+1} value={i+1}>{REALMS[i+1]}</option>)}
+                                            // 【修改 6】：坊市下拉菜单使用 currentRealms
+                                            <select value={gachaTargetRealm} onChange={(e) => { setGachaTargetRealm(parseInt(e.target.value)); setGachaTargetSub(0); }} style={{/*...*/}}>
+                                                {Array.from({length: Math.max(1, cultivation.realmLevel)}).map((_, i) => {
+                                                     // 动态获取名字
+                                                     const rName = (MODE_REALMS[activeMode] || MODE_REALMS['intuition'])[i+1] || '未知';
+                                                     return <option key={i+1} value={i+1}>{rName}</option>;
+                                                })}
                                             </select>
                                             <select value={gachaTargetSub} onChange={(e) => setGachaTargetSub(parseInt(e.target.value))} style={{padding: '6px', borderRadius: 6, border: '1px solid #cbd5e1', outline: 'none'}}>
                                                 {[0,1,2,3,4].map(idx => {
@@ -3954,7 +3966,7 @@ const saveResults = (overrideTrials?: number) => {
                             </div>
                             {lastGachaResult.pill && (
                                 <div style={{padding: '10px 16px', border: '1px solid #10b981', background: '#ecfdf5', borderRadius: 8, display: 'inline-block', fontWeight: 700, color: '#065f46'}}>
-                                    {getPillName(lastGachaResult.pill)}
+                                    {getPillName(lastGachaResult.pill, activeMode)}
                                 </div>
                             )}
                         </div>
