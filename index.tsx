@@ -12,7 +12,7 @@ const DEFAULT_INTERVAL = 3.0;
 const DEFAULT_DISPLAY_TIME = 0.5;
 
 const REALMS = ['', '锻体', '炼气', '筑基', '结丹', '元婴', '化神', '炼虚', '合体', '大乘', '渡劫'];
-const STAGES = ['前期', '前期巅峰', '中期', '中期巅峰', '后期', '后期巅峰', '圆满', '大圆满'];
+const STAGES = ['初期', '初期巅峰', '中期', '中期巅峰', '后期', '后期巅峰', '圆满', '大圆满'];
 type PlayMode = 'memorize' | 'intuition' | 'technique' | 'score';
 const MODE_LABELS: Record<PlayMode, string> = {
     memorize: '强记',
@@ -33,7 +33,7 @@ type PillGrade = 'low' | 'mid' | 'high' | 'peak'
                | 'virtual' | 'real'
                | 'unique' | 'rare' | 'fine' | 'finished' | 'defective';
 
-// 0:前期, 1:中期, 2:后期 3:圆满 4:大圆满
+// 0:初期, 1:中期, 2:后期 3:圆满 4:大圆满
 type SubRealm = 0 | 1 | 2 | 3 | 4;
 // --- 新增：段位系统配置 ---
 const RANK_SYSTEM = [
@@ -875,7 +875,7 @@ function getFireReqTime(selectedCount: number): number {
 }
 // --- 绝对等级转换 (用于凝神/护基丹) ---
 function getPillFromAbsoluteIndex(index: number) {
-    // 限制最低为 6 (锻体前期虚品)
+    // 限制最低为 6 (锻体初期虚品)
     const safeIndex = Math.max(6, index);
     return {
         realm: Math.floor(safeIndex / 6),
@@ -908,7 +908,7 @@ function getPillName(pill: Pill): string {
   const realmName = REALMS[pill.realm] || '未知';
   let subName = '';
   if (pill.subRealm !== undefined && pill.type !== 'heavenly') {
-    const subNames = ['前期', '中期', '后期', '圆满', '大圆满'];
+    const subNames = ['初期', '中期', '后期', '圆满', '大圆满'];
     subName = subNames[pill.subRealm] || '';
   }
 
@@ -1102,7 +1102,7 @@ function getAccumulationMax(realm: number, subRealm: SubRealm): number {
     const sqrtN = Math.sqrt(n);
     const power = Math.pow(10, n);
     
-    let c = 4; // 前期
+    let c = 4; // 初期
     if (subRealm === 1) c = 8; // 中期
     if (subRealm === 2) c = 16; // 后期
     
@@ -1112,12 +1112,12 @@ function getAccumulationMax(realm: number, subRealm: SubRealm): number {
 
 // 获取当前阶段的最大经验值 (用于进度条分母)
 function getMaxXP(realm: number, stage: number): number {
-  if (stage === 0) return getAccumulationMax(realm, 0); // 前期积累
+  if (stage === 0) return getAccumulationMax(realm, 0); // 初期积累
   if (stage === 2) return getAccumulationMax(realm, 1); // 中期积累
   if (stage === 4) return getAccumulationMax(realm, 2); // 后期积累
   if (stage === 6) {
-     // 圆满 -> 下一大境界，按下一境界的前期标准算，或者按当前圆满算(C=4*sqrt(next)*10^next)
-     // 通常圆满是为了突破大境界，这里沿用下一境界前期标准作为“圆满”的积累量
+     // 圆满 -> 下一大境界，按下一境界的初期标准算，或者按当前圆满算(C=4*sqrt(next)*10^next)
+     // 通常圆满是为了突破大境界，这里沿用下一境界初期标准作为“圆满”的积累量
      const nextRealm = realm + 1;
      return Math.round(4 * Math.sqrt(nextRealm) * Math.pow(10, nextRealm)); 
   }
@@ -1127,7 +1127,7 @@ function getMaxXP(realm: number, stage: number): number {
 // 获取瓶颈突破目标 (不带根号，严格按 1, 2, 4 倍率)
 function getBreakthroughTarget(realm: number, stage: number): number {
   const power = Math.pow(10, realm);
-  if (stage === 1) return 1 * power; // 前期巅峰 -> 中期
+  if (stage === 1) return 1 * power; // 初期巅峰 -> 中期
   if (stage === 3) return 2 * power; // 中期巅峰 -> 后期
   if (stage === 5) return 4 * power; // 后期巅峰 -> 圆满
   return 0;
@@ -1141,7 +1141,7 @@ function getExpConstant(realm: number, subRealm: SubRealm, isReal: boolean): num
     let virtualVal = 0;
     
     // 虚品对应的经验常数
-    if (subRealm === 0) virtualVal = 1 * power;      // 前期
+    if (subRealm === 0) virtualVal = 1 * power;      // 初期
     else if (subRealm === 1) virtualVal = 2 * power; // 中期
     else if (subRealm === 2) virtualVal = 4 * power; // 后期
     
@@ -1203,7 +1203,7 @@ function calculatePillProbabilities(variance: number) {
 
 // 获取小境界底分系数
 function getRealmBaseCoeff(idx: number): number {
-    const map = [1, 2, 4, 6, 8]; // 前期, 中期, 后期, 圆满, 大圆满
+    const map = [1, 2, 4, 6, 8]; // 初期, 中期, 后期, 圆满, 大圆满
     return map[idx] || 1;
 }
 
@@ -1218,7 +1218,7 @@ function getHeavenlyProbs() {
 }
 // 将用户的 stage (0-7) 映射到丹药的 subRealm (0-4)
 function userStageToSubIndex(stage: number): number {
-    if (stage <= 1) return 0; // 前期/前期巅峰
+    if (stage <= 1) return 0; // 初期/初期巅峰
     if (stage <= 3) return 1; // 中期/中期巅峰
     if (stage <= 5) return 2; // 后期/后期巅峰
     if (stage === 6) return 3; // 圆满
@@ -2112,7 +2112,7 @@ const saveResults = (overrideTrials?: number) => {
 
     // --- Pill Drop Logic ---
     const dropRealmBase = Math.floor(difficulty);
-    const names = ['前期','中期','后期'];
+    const names = ['初期','中期','后期'];
 
     // 计算玩家当前的绝对级别 (每跨1大境界+6级，每跨1小境界+2级)
     const userMinor = Math.min(2, Math.floor(nextCultivation.stage / 2));
@@ -3804,7 +3804,7 @@ const saveResults = (overrideTrials?: number) => {
                         {(() => {
                             const userSub = userStageToSubIndex(cultivation.stage);
                             const uli = cultivation.realmLevel * 6 + userSub * 2;
-                            const subNames =['前期', '中期', '后期', '圆满', '大圆满'];
+                            const subNames =['初期', '中期', '后期', '圆满', '大圆满'];
 
                             if (gachaTargetType === 'spirit') {
                                 const uBase = calculateBaseScore(cultivation.realmLevel, userSub);
@@ -3820,7 +3820,7 @@ const saveResults = (overrideTrials?: number) => {
                                             <select value={gachaTargetSub} onChange={(e) => setGachaTargetSub(parseInt(e.target.value))} style={{padding: '6px', borderRadius: 6, border: '1px solid #cbd5e1', outline: 'none'}}>
                                                 {[0,1,2,3,4].map(idx => {
                                                     if (gachaTargetRealm === cultivation.realmLevel && idx > userSub) return null;
-                                                    return <option key={idx} value={idx}>{['前期', '中期', '后期', '圆满', '大圆满'][idx]}</option>;
+                                                    return <option key={idx} value={idx}>{['初期', '中期', '后期', '圆满', '大圆满'][idx]}</option>;
                                                 })}
                                             </select>
                                         </div>
