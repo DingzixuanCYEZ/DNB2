@@ -1297,6 +1297,7 @@ const HistoryDayGroup: React.FC<HistoryDayGroupProps> = ({
     
     let realmChangeText = "";
     if (startRecord && endRecord) {
+        const dayMode = (startRecord.mode || 'intuition') as PlayMode;
         realmChangeText = formatProgressChange(
             startRecord.realmLevel, 
             startRecord.stage, 
@@ -1304,7 +1305,8 @@ const HistoryDayGroup: React.FC<HistoryDayGroupProps> = ({
             endRecord.afterRealmLevel ?? endRecord.realmLevel, 
             endRecord.afterStage ?? endRecord.stage, 
             endRecord.afterXP,
-            'percent' // 每日总计保持百分比显示
+            'percent', // 每日总计保持百分比显示
+            dayMode
         );
     } else {
         realmChangeText = "修炼记录";
