@@ -944,9 +944,9 @@ function getPillName(pill: Pill, mode: PlayMode = 'intuition'): string {
   const realmPart = subName ? realmName : `${realmName}`; // 移除“期”，因为像“战将”后面加“期”很怪
 
   if (pill.type === 'heavenly') {
-      return `${realmPart}·${gradeName}通天渡厄丹`;
+      return `${realmPart}期·${gradeName}通天渡厄丹`;
   } else if (pill.type === 'preservation') {
-      return `${realmName}级·${gradeName}保元丹`; // 用“级”或者通用量词
+      return `${realmName}期·${gradeName}保元丹`; // 用“级”或者通用量词
   } else {
       const pName = pill.type === 'spirit' ? '灵元丹' : pill.type === 'focus' ? '凝神丹' : '护基丹';
       return `${realmPart}${subName}·${gradeName}${pName}`;
@@ -3827,7 +3827,6 @@ const saveResults = (overrideTrials?: number) => {
                                 return (
                                     <>
                                         <div style={{display: 'flex', gap: 12, justifyContent: 'center', marginBottom: 16}}>
-                                            // 【修改 6】：坊市下拉菜单使用 currentRealms
                                             <select value={gachaTargetRealm} onChange={(e) => { setGachaTargetRealm(parseInt(e.target.value)); setGachaTargetSub(0); }} style={{/*...*/}}>
                                                 {Array.from({length: Math.max(1, cultivation.realmLevel)}).map((_, i) => {
                                                      // 动态获取名字
@@ -3907,7 +3906,7 @@ const saveResults = (overrideTrials?: number) => {
                                             <span style={{fontSize: '0.85rem', alignSelf: 'center'}}>炼制 N =</span>
                                             <select value={gachaTargetRealm} onChange={e => setGachaTargetRealm(parseInt(e.target.value))} style={{padding: '6px 12px', borderRadius: 8, border: '1px solid #cbd5e1', outline: 'none', fontWeight: 600, background: 'white'}}>
                                                 {Array.from({length: cultivation.realmLevel + 2}).map((_, i) => (
-                                                    <option key={i+1} value={i+1}>{i+1} ({REALMS[i+1] || '未知'})</option>
+                                                    <option key={i+1} value={i+1}>{i+1} ({currentrealms[i+1] || '未知'})</option>
                                                 ))}
                                             </select>
                                         </div>
@@ -3935,7 +3934,7 @@ const saveResults = (overrideTrials?: number) => {
                                 return (
                                     <>
                                         <div style={{marginBottom: 16, fontWeight: 700, color: '#9a3412', background: '#ffedd5', padding: '8px', borderRadius: 8}}>
-                                            目标: {REALMS[cultivation.realmLevel + 1]}·通天渡厄丹
+                                            目标: {currentRealms[cultivation.realmLevel + 1] || '未知'}期·通天渡厄丹
                                         </div>
                                         <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6}}>
                                             <div style={{background: '#fee2e2', padding: '8px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.7rem', color: '#b91c1c'}}>炸炉</div><div style={{fontWeight: 800, color: '#991b1b'}}>{(probs.fail * 100).toFixed(0)}%</div></div>
