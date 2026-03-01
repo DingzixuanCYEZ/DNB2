@@ -2110,10 +2110,21 @@ const saveResults = (overrideTrials?: number) => {
         if (usedPill.type === 'heavenly') {
              if (nextCultivation.stage === 6 || nextCultivation.stage === 7) {
                  if (usedPill.realm > nextCultivation.realmLevel) {
-                     if (usedPill.grade === 'human') tribulationReqOffset = 5; 
-                     else if (usedPill.grade === 'earth') tribulationReqOffset = 10; 
-                     else if (usedPill.grade === 'heaven') tribulationReqOffset = 15; 
-                     pillEffectLog = `通天渡厄丹生效: 渡劫要求降低 ${tribulationReqOffset}%`;
+                     // 计算境界差
+                     const realmDiff = usedPill.realm - nextCultivation.realmLevel;
+                     
+                     // 【新增逻辑】如果高出2个大境界及以上，强制视为天品 (15%)
+                     if (realmDiff >= 2) {
+                         tribulationReqOffset = 15;
+                         pillEffectLog = `通天渡厄丹生效(越阶神效): 药力磅礴视同天品，要求降低 15%`;
+                     } 
+                     // 否则按原品级计算
+                     else {
+                         if (usedPill.grade === 'human') tribulationReqOffset = 5; 
+                         else if (usedPill.grade === 'earth') tribulationReqOffset = 10; 
+                         else if (usedPill.grade === 'heaven') tribulationReqOffset = 15; 
+                         pillEffectLog = `通天渡厄丹生效: 渡劫要求降低 ${tribulationReqOffset}%`;
+                     }
                  } else {
                      pillEffectLog = `通天渡厄丹无效: 丹药境界过低`;
                  }
@@ -2729,7 +2740,7 @@ acquireLogs.push(`护基机缘: M=${mFound.toFixed(2)}x。原分 ${pureOriginalS
         const pillBase = 1 * Math.pow(10, gachaTargetRealm);
         
         // 3. 计算跨度倍率与方差
-        const ratio = Math.max(0.1, userBase / pillBase); // 允许越级(ratio < 1)，但设置最小值
+        const ratio = Math.max(0.01, userBase / pillBase); // 允许越级(ratio < 1)，但设置最小值
         const variance = ratio * 1.5;
         const probs = calculatePreservationProbs(variance);
         
