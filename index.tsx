@@ -2740,7 +2740,7 @@ acquireLogs.push(`护基机缘: M=${mFound.toFixed(2)}x。原分 ${pureOriginalS
         const pillBase = 1 * Math.pow(10, gachaTargetRealm);
         
         // 3. 计算跨度倍率与方差
-        const ratio = Math.max(0.01, userBase / pillBase); // 允许越级(ratio < 1)，但设置最小值
+        const ratio = Math.max(0.000001, userBase / pillBase); // 允许越级(ratio < 1)，但设置最小值
         const variance = ratio * 1.5;
         const probs = calculatePreservationProbs(variance);
         
@@ -3912,7 +3912,7 @@ acquireLogs.push(`护基机缘: M=${mFound.toFixed(2)}x。原分 ${pureOriginalS
                                 const uBase = getRealmBaseCoeff(userSub) * Math.pow(10, cultivation.realmLevel);
                                 const pBase = 1 * Math.pow(10, gachaTargetRealm); 
                                 const ratio = uBase / pBase;
-                                const variance = Math.max(0.1, ratio) * 1.5;
+                                const variance = Math.max(0.00001, ratio) * 1.5;
                                 const probs = calculatePreservationProbs(variance);
                                 
                                 return (
