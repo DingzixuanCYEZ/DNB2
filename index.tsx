@@ -25,6 +25,13 @@ const MODE_LABELS: Record<PlayMode, string> = {
     technique: '良性技巧',
     score: '刷分'
 };
+// 【新增】：定义不同模式的“经验值”叫法
+const MODE_CURRENCY: Record<PlayMode, string> = {
+    memorize: '气血', // 对应蛮力/铜皮（武道/肉身成圣）
+    intuition: '修为', // 对应炼气/筑基（正统修仙）
+    technique: '才气', // 对应童生/秀才（儒道至圣）
+    score: '源能'     // 对应战士/星球（吞噬星空/科幻）
+};
 // 丹药类型
 type PillType = 'spirit' | 'focus' | 'foundation' | 'heavenly' | 'preservation';
 
@@ -962,7 +969,7 @@ function getPillDescription(pill: Pill): string {
     else if (pill.grade === 'mid') { mult=2; capBase=1; }
     else if (pill.grade === 'high') { mult=3; capBase=2; }
     else if (pill.grade === 'peak') { mult=5; capBase=4; }
-    return `增加经验获取 ${mult}倍，额外上限 ${C}*${capBase}*10^N。`;
+    return `增加修炼收益 ${mult}倍，额外上限 ${C}*${capBase}*10^N。`;
   }
   if (pill.type === 'focus') {
     return `小境界冲关辅助。提升转化率 (72%~100%)。丹药境界需匹配瓶颈。`;
@@ -1367,7 +1374,7 @@ const HistoryDayGroup: React.FC<HistoryDayGroupProps> = ({
                                         {bScore !== undefined && (
                                             <div style={{textAlign: 'right'}}>
                                                 <div style={{fontWeight: 700, color: '#ea580c', fontSize: '1.05rem'}}>
-                                                    +{formatScore(bScore)} 经验
+                                                    +{formatScore(bScore)} {MODE_CURRENCY[run.mode as PlayMode] || '经验'}
                                                 </div>
                                                 {bnScore > 0 && (
                                                     <div style={{fontSize: '0.75rem', color: '#f59e0b', marginTop: 2}}>
@@ -2071,7 +2078,7 @@ const saveResults = (overrideTrials?: number) => {
                  
                  bonusScore += spiritBonus;
                  calculatedScore += spiritBonus;
-                 pillEffectLog = `灵元丹生效: 额外获得 ${formatScore(spiritBonus)} 经验`;
+                 pillEffectLog = `灵元丹生效: 额外获得 ${formatScore(spiritBonus)} ${MODE_CURRENCY[activeMode]}`;
              } else {
                  pillEffectLog = `灵元丹无效: 当前不在修为积累期`;
              }
@@ -2310,7 +2317,8 @@ acquireLogs.push(`护基机缘: M=${mFound.toFixed(2)}x。原分 ${pureOriginalS
                 timestamp: Date.now(),
                 type: 'major',
                 title: `突破成功！晋升${getFullStageName(realm + 1, 0, activeMode).replace('前期', '')}`,
-                description: `从${STAGES[stage]}突破桎梏。获得初始经验 ${formatScore(inheritedXP)}。难度 N=${n}, 准确率 ${totalAccVal}% (要求 ${reqAcc}%)。`,
+                // 【修改】：经验 -> 修为/气血...
+                description: `从${STAGES[stage]}突破桎梏。获得初始${MODE_CURRENCY[activeMode]} ${formatScore(inheritedXP)}。难度 N=${n}, 准确率 ${totalAccVal}% (要求 ${reqAcc}%)。`,
                 stageDuration: nextCultivation.stageStudyTime,
                 totalDuration: nextCultivation.totalStudyTime,
                 stageSessions: nextCultivation.stageSessions,
@@ -3083,7 +3091,7 @@ acquireLogs.push(`护基机缘: M=${mFound.toFixed(2)}x。原分 ${pureOriginalS
       // 防止除以0
       const safeMax = maxXP > 0 ? maxXP : 100; 
       progressPercent = Math.min(100, (cultivation.currentXP / safeMax) * 100);
-      progressText = `修为: ${formatScore(cultivation.currentXP)} / ${formatScore(maxXP)}`;
+      progressText = `${currencyName}: ${formatScore(cultivation.currentXP)} / ${formatScore(maxXP)}`;
       
       if (cultivation.stage === 6) {
           // 圆满期提示
