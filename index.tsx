@@ -1591,7 +1591,7 @@ const Game = () => {
 
   const [activeMode, setActiveMode] = useState<PlayMode>('score');
   const [showGlobalHistory, setShowGlobalHistory] = useState(false);
-
+  const [showRankMap, setShowRankMap] = useState(false);
   // 统一持久化存储
   useEffect(() => {
       localStorage.setItem('dual-n-back-master-v2', JSON.stringify(masterData));
@@ -4186,18 +4186,38 @@ acquireLogs.push(`护基机缘: M=${mFound.toFixed(2)}x。原分 ${pureOriginalS
               flexDirection: 'column',
               padding: '20px 16px' 
           }}>
+            {/* 顶部标题栏 */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexShrink: 0 }}>
               <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#0369a1', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Activity size={22} /> 诸天综合卷宗
               </h2>
-              <button style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }} onClick={() => setShowGlobalHistory(false)}>
-                <X size={24} />
-              </button>
+              <div style={{display: 'flex', gap: 12, alignItems: 'center'}}>
+                  {/* 【新增】：切换视图按钮 */}
+                  <button 
+                    onClick={() => setShowRankMap(!showRankMap)}
+                    style={{
+                        background: showRankMap ? '#e0f2fe' : 'transparent',
+                        color: showRankMap ? '#0284c7' : '#64748b',
+                        border: showRankMap ? '1px solid #bae6fd' : '1px solid #e2e8f0',
+                        borderRadius: 8,
+                        padding: '4px 8px',
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', gap: 4
+                    }}
+                  >
+                      {showRankMap ? <Layers size={14}/> : <Trophy size={14}/>}
+                      {showRankMap ? '查看记录' : '段位图谱'}
+                  </button>
+                  <button style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }} onClick={() => setShowGlobalHistory(false)}>
+                    <X size={24} />
+                  </button>
+              </div>
             </div>
 
-            {/* --- 新增：当前段位展示面板 --- */}
+            {/* 当前段位展示面板 (保持不变，作为公共头部) */}
             {(() => {
-                // 计算当前四个模式的总分
                 let currentTotalScore = 0;
                 Object.keys(masterData.modes).forEach(mKey => {
                     const cult = masterData.modes[mKey].cultivation;
@@ -4222,7 +4242,7 @@ acquireLogs.push(`护基机缘: M=${mFound.toFixed(2)}x。原分 ${pureOriginalS
                         <div style={{fontSize: '2rem', fontWeight: 800, color: rank.color, lineHeight: 1, marginBottom: 4}}>
                             {rank.title} <span style={{fontSize: '1.2rem', opacity: 0.8}}>{rank.subRank}</span>
                         </div>
-                        {/* 星星展示 */}
+                        {/* 星星展示 (1-5星) */}
                         <div style={{display: 'flex', gap: 4, marginBottom: 8}}>
                             {[0,1,2,3,4].map(i => (
                                 <Star key={i} size={16} 
@@ -4238,7 +4258,7 @@ acquireLogs.push(`护基机缘: M=${mFound.toFixed(2)}x。原分 ${pureOriginalS
                 );
             })()}
 
-            {/* 滚动容器 */}
+            {/* 滚动容器：根据 showRankMap 切换内容 */}
             <div style={{ 
                 overflowY: 'auto', 
                 flex: 1, 
@@ -4247,143 +4267,199 @@ acquireLogs.push(`护基机缘: M=${mFound.toFixed(2)}x。原分 ${pureOriginalS
                 flexDirection: 'column',
                 gap: 12
             }}>
-              {(() => {
-                // --- 核心逻辑：回溯每一天的总分状态 ---
-                // 1. 收集所有模式的所有记录
-                let allRecords: (GameResult & { modeKey: string })[] = [];
-                Object.keys(masterData.modes).forEach(mKey => {
-                    const modeHistory = masterData.modes[mKey].history || [];
-                    modeHistory.forEach((r: GameResult) => {
-                        allRecords.push({ ...r, modeKey: mKey });
+              {showRankMap ? (
+                  // --- 【新增】：段位图谱视图 ---
+                  <div style={{display: 'flex', flexDirection: 'column-reverse', gap: 8, paddingBottom: 20}}>
+                      {RANK_SYSTEM.map((r, idx) => {
+                          // 计算当前总分
+                          let currentTotalScore = 0;
+                          Object.keys(masterData.modes).forEach(mKey => {
+                              const cult = masterData.modes[mKey].cultivation;
+                              currentTotalScore += getModeScore(cult.realmLevel, cult.stage);
+                          });
+                          
+                          // 计算该段位的分数区间
+                          const minScore = idx * 20;
+                          const maxScore = (idx + 1) * 20 - 1;
+                          
+                          // 状态判定
+                          const isUnlocked = currentTotalScore >= minScore;
+                          const isCurrent = currentTotalScore >= minScore && currentTotalScore <= maxScore;
+                          const isPassed = currentTotalScore > maxScore;
+                          
+                          // 颜色处理
+                          const textColor = isUnlocked ? r.color : '#94a3b8';
+                          const bgColor = isCurrent ? '#f0f9ff' : isUnlocked ? '#fff' : '#f8fafc';
+                          const borderColor = isCurrent ? r.color : isUnlocked ? '#e2e8f0' : '#f1f5f9';
+                          
+                          return (
+                              <div key={idx} style={{
+                                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                  padding: '12px 16px',
+                                  borderRadius: 12,
+                                  background: bgColor,
+                                  border: `1px solid ${borderColor}`,
+                                  opacity: isUnlocked ? 1 : 0.6,
+                                  boxShadow: isCurrent ? `0 0 0 1px ${r.color}40` : 'none',
+                                  position: 'relative'
+                              }}>
+                                  <div style={{display: 'flex', alignItems: 'center', gap: 12}}>
+                                      {/* 序号/图标 */}
+                                      <div style={{
+                                          width: 24, height: 24, borderRadius: '50%', 
+                                          background: isUnlocked ? r.color : '#cbd5e1',
+                                          color: 'white', fontSize: '0.75rem', fontWeight: 700,
+                                          display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                      }}>
+                                          {isCurrent ? <Activity size={14} /> : isPassed ? <Trophy size={12} /> : (idx + 1)}
+                                      </div>
+                                      
+                                      <div style={{display: 'flex', flexDirection: 'column'}}>
+                                          <span style={{fontWeight: 800, color: textColor, fontSize: '0.95rem'}}>
+                                              {r.name}
+                                          </span>
+                                          <span style={{fontSize: '0.75rem', color: '#94a3b8'}}>
+                                              评分要求: {minScore} - {maxScore}
+                                          </span>
+                                      </div>
+                                  </div>
+                                  
+                                  {/* 状态标记 */}
+                                  {isCurrent && (
+                                      <div style={{
+                                          fontSize: '0.7rem', fontWeight: 700, color: '#fff', 
+                                          background: r.color, padding: '2px 8px', borderRadius: 10
+                                      }}>
+                                          当前
+                                      </div>
+                                  )}
+                                  {!isUnlocked && <Lock size={16} color="#cbd5e1" />}
+                              </div>
+                          );
+                      })}
+                  </div>
+              ) : (
+                  // --- 原有的：历史记录列表视图 ---
+                  (() => {
+                    let allRecords: (GameResult & { modeKey: string })[] = [];
+                    Object.keys(masterData.modes).forEach(mKey => {
+                        const modeHistory = masterData.modes[mKey].history || [];
+                        modeHistory.forEach((r: GameResult) => {
+                            allRecords.push({ ...r, modeKey: mKey });
+                        });
                     });
-                });
-                
-                // 2. 按时间排序
-                allRecords.sort((a, b) => a.timestamp - b.timestamp);
-                
-                // 3. 模拟状态机
-                // 记录每个模式当前的 {realm, stage}
-                const currentStatus: Record<string, {r: number, s: number}> = {
-                    memorize: {r: 1, s: 0},
-                    intuition: {r: 1, s: 0},
-                    technique: {r: 1, s: 0},
-                    score: {r: 1, s: 0}
-                };
-                
-                // 4. 按天聚合数据，同时更新状态
-                const dayGroups = new Map<string, { 
-                    totalTime: number, 
-                    modes: any, 
-                    rankAtEnd: any // 记录当天的段位
-                }>();
-                
-                allRecords.forEach(run => {
-                    const dStr = new Date(run.timestamp).toLocaleDateString('zh-CN');
                     
-                    // 更新该模式的状态为这局游戏结束后的状态
-                    currentStatus[run.modeKey] = {
-                        r: run.afterRealmLevel ?? run.realmLevel,
-                        s: run.afterStage ?? run.stage
+                    allRecords.sort((a, b) => a.timestamp - b.timestamp);
+                    
+                    const currentStatus: Record<string, {r: number, s: number}> = {
+                        memorize: {r: 1, s: 0},
+                        intuition: {r: 1, s: 0},
+                        technique: {r: 1, s: 0},
+                        score: {r: 1, s: 0}
                     };
                     
-                    if (!dayGroups.has(dStr)) {
-                        dayGroups.set(dStr, { totalTime: 0, modes: {}, rankAtEnd: null });
-                    }
+                    const dayGroups = new Map<string, { 
+                        totalTime: number, 
+                        modes: any, 
+                        rankAtEnd: any 
+                    }>();
                     
-                    const dData = dayGroups.get(dStr)!;
-                    const rTime = run.sessionDuration || (run.totalTrials * (run.interval || 1));
-                    dData.totalTime += rTime;
-                    
-                    // 记录模式明细
-                    if (!dData.modes[run.modeKey]) dData.modes[run.modeKey] = { time: 0, startRun: run, endRun: run };
-                    const mData = dData.modes[run.modeKey];
-                    mData.time += rTime;
-                    // 更新起止
-                    if (run.timestamp < mData.startRun.timestamp) mData.startRun = run;
-                    if (run.timestamp > mData.endRun.timestamp) mData.endRun = run;
-                    
-                    // 计算这一刻的总分 (每次循环都算一次有点浪费，但这能保证准确)
-                    // 优化：只在每一天处理完后再算，或者每次记录覆盖
-                    // 这里我们为了简单，在这一天所有的记录遍历完后，取最后的状态算一次即可。
-                    // 但因为我们是线性的，所以我们可以在每一条记录处理时都计算一下"当前分"，但只保留最后的。
-                    let scoreSum = 0;
-                    Object.values(currentStatus).forEach(st => {
-                        scoreSum += getModeScore(st.r, st.s);
-                    });
-                    dData.rankAtEnd = getRankInfo(scoreSum);
-                });
-                
-                // 倒序显示 (最近的在上面)
-                const sortedDays = Array.from(dayGroups.entries()).sort((a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime());
-                
-                if (sortedDays.length === 0) return <div style={{textAlign: 'center', color: '#94a3b8', padding: 40}}>大道无痕，暂无修炼记录</div>;
-
-                return sortedDays.map(([dateStr, dData]) => (
-                  <div key={dateStr} style={{ border: '1px solid #bae6fd', borderRadius: 12, overflow: 'hidden', flexShrink: 0 }}>
-                    {/* 日期标题 + 当天段位 */}
-                    <div style={{ background: '#f0f9ff', padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #bae6fd' }}>
-                      <div style={{display:'flex', alignItems:'center', gap:8}}>
-                          <span style={{ fontWeight: 700, color: '#0c4a6e', display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <Calendar size={14} /> {dateStr}
-                          </span>
-                          {/* 当日段位徽章 */}
-                          {dData.rankAtEnd && (
-                              <div style={{
-                                  fontSize: '0.7rem', 
-                                  color: dData.rankAtEnd.color, 
-                                  background: '#fff', 
-                                  border: `1px solid ${dData.rankAtEnd.color}40`,
-                                  padding: '1px 6px',
-                                  borderRadius: 8,
-                                  fontWeight: 700,
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: 2
-                              }}>
-                                  {dData.rankAtEnd.title} {dData.rankAtEnd.subRank}
-                                  <Star size={8} fill={dData.rankAtEnd.color} strokeWidth={0} />
-                                  {dData.rankAtEnd.stars}
-                              </div>
-                          )}
-                      </div>
-                      <span style={{ color: '#0284c7', fontSize: '0.85rem', fontWeight: 600 }}>修: {formatDuration(dData.totalTime)}</span>
-                    </div>
-                    
-                    {/* 模式明细 */}
-                    <div style={{ padding: '8px 12px', background: 'white', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      {Object.keys(dData.modes).map(mKey => {
-                        const mData = dData.modes[mKey];
-                        const sRun = mData.startRun;
-                        const eRun = mData.endRun;
+                    allRecords.forEach(run => {
+                        const dStr = new Date(run.timestamp).toLocaleDateString('zh-CN');
                         
-                        // 计算进度文字
-                        const progText = formatProgressChange(
-                          sRun.realmLevel, sRun.stage, sRun.beforeXP,
-                          eRun.afterRealmLevel ?? eRun.realmLevel, eRun.afterStage ?? eRun.stage, eRun.afterXP,
-                          'percent',
-                          mKey as PlayMode
-                        );
+                        currentStatus[run.modeKey] = {
+                            r: run.afterRealmLevel ?? run.realmLevel,
+                            s: run.afterStage ?? run.stage
+                        };
+                        
+                        if (!dayGroups.has(dStr)) {
+                            dayGroups.set(dStr, { totalTime: 0, modes: {}, rankAtEnd: null });
+                        }
+                        
+                        const dData = dayGroups.get(dStr)!;
+                        const rTime = run.sessionDuration || (run.totalTrials * (run.interval || 1));
+                        dData.totalTime += rTime;
+                        
+                        if (!dData.modes[run.modeKey]) dData.modes[run.modeKey] = { time: 0, startRun: run, endRun: run };
+                        const mData = dData.modes[run.modeKey];
+                        mData.time += rTime;
+                        if (run.timestamp < mData.startRun.timestamp) mData.startRun = run;
+                        if (run.timestamp > mData.endRun.timestamp) mData.endRun = run;
+                        
+                        let scoreSum = 0;
+                        Object.values(currentStatus).forEach(st => {
+                            scoreSum += getModeScore(st.r, st.s);
+                        });
+                        dData.rankAtEnd = getRankInfo(scoreSum);
+                    });
+                    
+                    const sortedDays = Array.from(dayGroups.entries()).sort((a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime());
+                    
+                    if (sortedDays.length === 0) return <div style={{textAlign: 'center', color: '#94a3b8', padding: 40}}>大道无痕，暂无修炼记录</div>;
 
-                        return (
-                          <div key={mKey} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', fontSize: '0.85rem' }}>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span style={{ background: '#f1f5f9', color: '#475569', padding: '2px 6px', borderRadius: 6, fontSize: '0.7rem', fontWeight: 700, width: 56, textAlign: 'center' }}>
-                                  {MODE_LABELS[mKey as PlayMode]}
-                                </span>
-                                <span style={{ color: '#1e293b', fontWeight: 600 }}>{formatDuration(mData.time)}</span>
-                              </div>
-                            </div>
-                            <div style={{ color: '#0ea5e9', fontWeight: 600, fontSize: '0.8rem', textAlign: 'right', maxWidth: '60%' }}>
-                              {progText}
-                            </div>
+                    return sortedDays.map(([dateStr, dData]) => (
+                      <div key={dateStr} style={{ border: '1px solid #bae6fd', borderRadius: 12, overflow: 'hidden', flexShrink: 0 }}>
+                        <div style={{ background: '#f0f9ff', padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #bae6fd' }}>
+                          <div style={{display:'flex', alignItems:'center', gap:8}}>
+                              <span style={{ fontWeight: 700, color: '#0c4a6e', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <Calendar size={14} /> {dateStr}
+                              </span>
+                              {dData.rankAtEnd && (
+                                  <div style={{
+                                      fontSize: '0.7rem', 
+                                      color: dData.rankAtEnd.color, 
+                                      background: '#fff', 
+                                      border: `1px solid ${dData.rankAtEnd.color}40`,
+                                      padding: '1px 6px',
+                                      borderRadius: 8,
+                                      fontWeight: 700,
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: 2
+                                  }}>
+                                      {dData.rankAtEnd.title} {dData.rankAtEnd.subRank}
+                                      <Star size={8} fill={dData.rankAtEnd.color} strokeWidth={0} />
+                                      {dData.rankAtEnd.stars}
+                                  </div>
+                              )}
                           </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ));
-              })()}
+                          <span style={{ color: '#0284c7', fontSize: '0.85rem', fontWeight: 600 }}>修: {formatDuration(dData.totalTime)}</span>
+                        </div>
+                        
+                        <div style={{ padding: '8px 12px', background: 'white', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                          {Object.keys(dData.modes).map(mKey => {
+                            const mData = dData.modes[mKey];
+                            const sRun = mData.startRun;
+                            const eRun = mData.endRun;
+                            
+                            const progText = formatProgressChange(
+                              sRun.realmLevel, sRun.stage, sRun.beforeXP,
+                              eRun.afterRealmLevel ?? eRun.realmLevel, eRun.afterStage ?? eRun.stage, eRun.afterXP,
+                              'percent',
+                              mKey as PlayMode
+                            );
+
+                            return (
+                              <div key={mKey} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', fontSize: '0.85rem' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span style={{ background: '#f1f5f9', color: '#475569', padding: '2px 6px', borderRadius: 6, fontSize: '0.7rem', fontWeight: 700, width: 56, textAlign: 'center' }}>
+                                      {MODE_LABELS[mKey as PlayMode]}
+                                    </span>
+                                    <span style={{ color: '#1e293b', fontWeight: 600 }}>{formatDuration(mData.time)}</span>
+                                  </div>
+                                </div>
+                                <div style={{ color: '#0ea5e9', fontWeight: 600, fontSize: '0.8rem', textAlign: 'right', maxWidth: '60%' }}>
+                                  {progText}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ));
+                  })()
+              )}
             </div>
           </div>
         </div>
