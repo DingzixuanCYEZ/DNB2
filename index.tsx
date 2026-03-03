@@ -49,16 +49,34 @@ type PillGrade = 'low' | 'mid' | 'high' | 'peak'
 type SubRealm = 0 | 1 | 2 | 3 | 4;
 // --- 新增：段位系统配置 ---
 const RANK_SYSTEM = [
-  { name: '黑铁行者', color: '#57534e' }, // 0-29
-  { name: '黄铜散修', color: '#92400e' }, // 30-59
-  { name: '白银真修', color: '#64748b' }, // 60-89
-  { name: '黄金真人', color: '#d97706' }, // 90-119
-  { name: '铂金宗师', color: '#0d9488' }, // 120-149
-  { name: '翡翠名宿', color: '#059669' }, // 150-179
-  { name: '钻石大能', color: '#2563eb' }, // 180-209
-  { name: '大师至尊', color: '#7c3aed' }, // 210-239
-  { name: '宗师天仙', color: '#dc2626' }, // 240-269
-  { name: '王者主宰', color: '#ea580c' }  // 270+
+  // 第一序列：凡骨（苦役与打磨）
+  { name: '木头杂役', color: '#78716c' }, // 灰褐：最底层的劳力 0-19
+  { name: '石头凡徒', color: '#57534e' }, // 深灰：刚刚开始磨练的凡人 20-39
+  { name: '黑铁行者', color: '#44403c' }, // 铁黑：行走世间的修行者 40-59
+  { name: '青铜卫士', color: '#92400e' }, // 古铜：拥有守护之力的战士 60-79
+  { name: '白银执事', color: '#64748b' }, // 银亮：处理宗门事务的精英 80-99
+  { name: '黄金护法', color: '#d97706' }, // 金黄：守护一方道统的强者 100-119
+  { name: '铂金卿相', color: '#0d9488' }, // 蓝绿：位极人臣的显贵 120-139
+
+  // 第二序列：晶耀（能量与蜕变）
+  { name: '翡翠尊使', color: '#059669' }, // 翠绿：传达上界意志的使者 140-159
+  { name: '紫晶洞主', color: '#7c3aed' }, // 紫罗兰：占据灵脉的一方之主 160-179
+  { name: '钻石真人', color: '#2563eb' }, // 亮蓝：修得真性的超脱之人 180-199
+  { name: '星耀真君', color: '#4f46e5' }, // 靛青：掌控星辰之力的君主 200-219
+
+  // 第三序列：英杰（技艺与统治）
+  { name: '超凡尊者', color: '#9333ea' }, // 纯紫：超越凡俗的受尊者 220-239
+  { name: '大师掌教', color: '#c026d3' }, // 品红：一教之长，技艺巅峰 240-259
+  { name: '宗师府主', color: '#db2777' }, // 桃红：府压万古，开宗立派 260-279
+  { name: '王者帝君', color: '#dc2626' }, // 鲜红：统领诸王的帝道核心 280-299
+  { name: '主宰皇极', color: '#ea580c' }, // 橙红：主宰众生，皇权极致 300-319
+
+  // 第四序列：神性（史诗与永恒）
+  { name: '史诗天尊', color: '#f59e0b' }, // 琥珀：被镌刻在苍穹的尊号 320-339
+  { name: '传说神君', color: '#10b981' }, // 荧光绿：活在神话之前的古老存在 340-359
+  { name: '神话始祖', color: '#ef4444' }, // 朱红：血脉与规则的源头 360-379
+  { name: '不朽冥尊', color: '#1e1b4b' }, // 极深蓝：跨越生死，幽冥不灭 380-399
+  { name: '超神虚皇', color: '#000000' }  // 纯黑：凌驾虚空，逻辑终点 400-
 ];
 
 // 计算单个模式的分数
@@ -70,27 +88,27 @@ function getModeScore(realm: number, stage: number): number {
     return (realm - 1) * 8 + stage;
 }
 
-// 获取段位详情
+// 获取段位详情 (适配 20分/级，4个小段位 x 5星)
 function getRankInfo(totalScore: number) {
-    // 1. 确定大段位 (每30分一级)
-    const bigRankIdx = Math.min(Math.floor(totalScore / 30), RANK_SYSTEM.length - 1);
+    // 1. 确定大段位 (每20分一级)
+    // 原来是30，改为20
+    const bigRankIdx = Math.min(Math.floor(totalScore / 20), RANK_SYSTEM.length - 1);
     const config = RANK_SYSTEM[bigRankIdx];
     
     // 2. 计算在大段位内的剩余分数
-    // 如果已经是最高段位且溢出，还是按最高段位算，但星数可能会满
     const remainder = bigRankIdx === RANK_SYSTEM.length - 1 
-        ? Math.max(0, totalScore - bigRankIdx * 30) 
-        : totalScore % 30;
+        ? Math.max(0, totalScore - bigRankIdx * 20) 
+        : totalScore % 20;
 
-    // 3. 确定小段位 (每6分一级，共5级：V, IV, III, II, I)
-    // 0-5: V, 6-11: IV, ... 24-29: I
-    // 如果是大段位溢出，限制在 I
-    const subRankVal = Math.min(4, Math.floor(remainder / 6));
-    const subLabels = ['V', 'IV', 'III', 'II', 'I'];
+    // 3. 确定小段位 (每5分一级，共4级：IV, III, II, I)
+    // 0-4: IV, 5-9: III, 10-14: II, 15-19: I
+    const subRankVal = Math.min(3, Math.floor(remainder / 5));
+    const subLabels = ['IV', 'III', 'II', 'I']; // 只有4个小段位
     const subRankStr = subLabels[subRankVal];
     
-    // 4. 确定星数 (0-5星)
-    const stars = remainder % 6; // 0-5
+    // 4. 确定星数 (1-5星模式)
+    // 0分=1星, 4分=5星(圆满), 5分=晋级
+    const stars = (remainder % 5) + 1; 
     
     return {
         title: config.name,
