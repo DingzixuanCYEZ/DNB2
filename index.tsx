@@ -3066,7 +3066,7 @@ acquireLogs.push(`护基机缘: M=${mFound.toFixed(2)}x。原分 ${pureOriginalS
       });
       return list.reverse(); 
   }, [filteredHistory, searchN]);
-
+  const currencyName = MODE_CURRENCY[activeMode] || '经验';
   let progressPercent = 0;
   let progressText = '';
   let bottleneckContent = null;
