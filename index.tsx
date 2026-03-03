@@ -1592,6 +1592,7 @@ const Game = () => {
   const [activeMode, setActiveMode] = useState<PlayMode>('score');
   const [showGlobalHistory, setShowGlobalHistory] = useState(false);
   const [showRankMap, setShowRankMap] = useState(false);
+    const [expandedRank, setExpandedRank] = useState<number | null>(null);
   // 统一持久化存储
   useEffect(() => {
       localStorage.setItem('dual-n-back-master-v2', JSON.stringify(masterData));
@@ -2892,7 +2893,130 @@ acquireLogs.push(`护基机缘: M=${mFound.toFixed(2)}x。原分 ${pureOriginalS
       </div>
     );
   };
+// --- 核心算法：回溯历史，生成段位时间轴 ---
+  const rankTimeline = useMemo(() => {
+      if (!showRankMap) return null;
 
+      // 1. 收集并排序所有记录
+      let allRecords: (GameResult & { modeKey: string })[] = [];
+      Object.keys(masterData.modes).forEach(mKey => {
+          const modeHistory = masterData.modes[mKey].history || [];
+          modeHistory.forEach((r: GameResult) => {
+              allRecords.push({ ...r, modeKey: mKey });
+          });
+      });
+      allRecords.sort((a, b) => a.timestamp - b.timestamp);
+
+      if (allRecords.length === 0) return { big: [], firstGameTime: Date.now() };
+
+      const firstGameTime = allRecords[0].timestamp;
+      
+      // 状态机初始化
+      const currentStatus: Record<string, {r: number, s: number}> = {
+          memorize: {r: 1, s: 0}, intuition: {r: 1, s: 0}, technique: {r: 1, s: 0}, score: {r: 1, s: 0}
+      };
+
+      // 存储结果的数据结构
+      // big[i] = { reached: T/F, timestamp: ts, duration: ms, sub: [ {reached, ts, duration} * 4 ] }
+      const stats: any[] = RANK_SYSTEM.map(() => ({
+          reached: false,
+          timestamp: 0,
+          duration: 0, // 在此段位停留的时间
+          sub: [0,1,2,3].map(() => ({ reached: false, timestamp: 0, duration: 0 })) // IV, III, II, I
+      }));
+
+      // 初始状态 (0分 = 黑铁 IV)
+      let prevBigIdx = 0;
+      let prevSubIdx = 0; // 0=IV
+      stats[0].reached = true;
+      stats[0].timestamp = firstGameTime;
+      stats[0].sub[0].reached = true;
+      stats[0].sub[0].timestamp = firstGameTime;
+
+      // 2. 遍历回溯
+      allRecords.forEach(run => {
+          // 更新当前模式的分数
+          currentStatus[run.modeKey] = {
+              r: run.afterRealmLevel ?? run.realmLevel,
+              s: run.afterStage ?? run.stage
+          };
+
+          // 计算总分
+          let totalScore = 0;
+          Object.values(currentStatus).forEach(st => totalScore += getModeScore(st.r, st.s));
+
+          // 计算此刻的段位
+          const bigIdx = Math.min(Math.floor(totalScore / 20), RANK_SYSTEM.length - 1);
+          const remainder = bigIdx === RANK_SYSTEM.length - 1 
+              ? Math.max(0, totalScore - bigIdx * 20) 
+              : totalScore % 20;
+          const subIdx = Math.min(3, Math.floor(remainder / 5)); // 0=IV, 1=III, 2=II, 3=I
+
+          const now = run.timestamp;
+
+          // 核心：如果段位发生了变化（晋升）
+          // 注意：这里简化处理，假设不会掉段，或者掉段不影响“首次达成时间”
+          
+          // 检查大段位晋升
+          if (bigIdx > prevBigIdx) {
+              // 结算旧大段位的时长
+              stats[prevBigIdx].duration += (now - stats[prevBigIdx].timestamp); // 累加（虽然后面直接覆盖了，但逻辑上是累加）
+              
+              // 标记中间跳过的段位（如果有）和新段位
+              for (let i = prevBigIdx + 1; i <= bigIdx; i++) {
+                  if (!stats[i].reached) {
+                      stats[i].reached = true;
+                      stats[i].timestamp = now; // 视为此刻达成
+                      // 如果跨级了，中间的段位 duration 为 0
+                  }
+              }
+              // 结算旧小段位（它在大段位结束时也结束了）
+              if (stats[prevBigIdx].sub[prevSubIdx].reached) {
+                   stats[prevBigIdx].sub[prevSubIdx].duration += (now - stats[prevBigIdx].sub[prevSubIdx].timestamp);
+              }
+              // 开启新大段位的当前小段位
+              if (!stats[bigIdx].sub[subIdx].reached) {
+                  stats[bigIdx].sub[subIdx].reached = true;
+                  stats[bigIdx].sub[subIdx].timestamp = now;
+              }
+              
+              prevBigIdx = bigIdx;
+              prevSubIdx = subIdx;
+          } 
+          // 检查小段位晋升 (同大段位内)
+          else if (bigIdx === prevBigIdx && subIdx > prevSubIdx) {
+              // 结算旧小段位
+              stats[bigIdx].sub[prevSubIdx].duration += (now - stats[bigIdx].sub[prevSubIdx].timestamp);
+              
+              // 标记新小段位
+              for (let j = prevSubIdx + 1; j <= subIdx; j++) {
+                  if (!stats[bigIdx].sub[j].reached) {
+                      stats[bigIdx].sub[j].reached = true;
+                      stats[bigIdx].sub[j].timestamp = now;
+                  }
+              }
+              prevSubIdx = subIdx;
+          }
+      });
+
+      // 3. 结算当前正在进行的段位时长 (直到现在)
+      const now = Date.now();
+      if (stats[prevBigIdx].reached) {
+          stats[prevBigIdx].duration = now - stats[prevBigIdx].timestamp;
+      }
+      if (stats[prevBigIdx].sub[prevSubIdx].reached) {
+          stats[prevBigIdx].sub[prevSubIdx].duration = now - stats[prevBigIdx].sub[prevSubIdx].timestamp;
+      }
+
+      return { big: stats, firstGameTime, currentBigIdx: prevBigIdx };
+  }, [masterData, showRankMap]);
+
+  // 辅助：格式化天数
+  const formatDays = (ms: number) => {
+      const days = (ms / (1000 * 60 * 60 * 24));
+      if (days < 1) return '<1天';
+      return `${days.toFixed(1)}天`;
+  };
   const getBtnClassName = (feedback: 'correct' | 'wrong' | null, pressed: boolean) => {
     let classes = 'match-btn';
     if (showFeedback && feedback) {
@@ -4267,78 +4391,115 @@ acquireLogs.push(`护基机缘: M=${mFound.toFixed(2)}x。原分 ${pureOriginalS
                 flexDirection: 'column',
                 gap: 12
             }}>
-              {showRankMap ? (
-                  // --- 【新增】：段位图谱视图 ---
-                  <div style={{display: 'flex', flexDirection: 'column-reverse', gap: 8, paddingBottom: 20}}>
+              {showRankMap && rankTimeline ? (
+                  // --- 段位图谱视图 (新版) ---
+                  <div style={{display: 'flex', flexDirection: 'column-reverse', gap: 10, paddingBottom: 20}}>
                       {RANK_SYSTEM.map((r, idx) => {
-                          // 计算当前总分
-                          let currentTotalScore = 0;
-                          Object.keys(masterData.modes).forEach(mKey => {
-                              const cult = masterData.modes[mKey].cultivation;
-                              currentTotalScore += getModeScore(cult.realmLevel, cult.stage);
-                          });
-                          
-                          // 计算该段位的分数区间
-                          const minScore = idx * 20;
-                          const maxScore = (idx + 1) * 20 - 1;
-                          
-                          // 状态判定
-                          const isUnlocked = currentTotalScore >= minScore;
-                          const isCurrent = currentTotalScore >= minScore && currentTotalScore <= maxScore;
-                          const isPassed = currentTotalScore > maxScore;
-                          
-                          // 颜色处理
-                          const textColor = isUnlocked ? r.color : '#94a3b8';
-                          const bgColor = isCurrent ? '#f0f9ff' : isUnlocked ? '#fff' : '#f8fafc';
-                          const borderColor = isCurrent ? r.color : isUnlocked ? '#e2e8f0' : '#f1f5f9';
+                          // 1. 过滤：比自己高的段位不显示
+                          if (idx > rankTimeline.currentBigIdx) return null;
+
+                          const stat = rankTimeline.big[idx];
+                          const isCurrent = idx === rankTimeline.currentBigIdx;
+                          const isExpanded = expandedRank === idx;
+
+                          // 计算“总消耗天数” (从第一次玩游戏 到 达成该段位的时间)
+                          const totalDaysSinceStart = stat.timestamp - rankTimeline.firstGameTime;
                           
                           return (
                               <div key={idx} style={{
-                                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                  padding: '12px 16px',
                                   borderRadius: 12,
-                                  background: bgColor,
-                                  border: `1px solid ${borderColor}`,
-                                  opacity: isUnlocked ? 1 : 0.6,
-                                  boxShadow: isCurrent ? `0 0 0 1px ${r.color}40` : 'none',
-                                  position: 'relative'
+                                  background: isCurrent ? '#f0f9ff' : '#fff',
+                                  border: `1px solid ${isCurrent ? r.color : '#e2e8f0'}`,
+                                  boxShadow: isCurrent ? `0 0 0 1px ${r.color}40` : '0 2px 4px rgba(0,0,0,0.02)',
+                                  overflow: 'hidden',
+                                  transition: 'all 0.2s'
                               }}>
-                                  <div style={{display: 'flex', alignItems: 'center', gap: 12}}>
-                                      {/* 序号/图标 */}
-                                      <div style={{
-                                          width: 24, height: 24, borderRadius: '50%', 
-                                          background: isUnlocked ? r.color : '#cbd5e1',
-                                          color: 'white', fontSize: '0.75rem', fontWeight: 700,
-                                          display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                      }}>
-                                          {isCurrent ? <Activity size={14} /> : isPassed ? <Trophy size={12} /> : (idx + 1)}
+                                  {/* 大段位头部 (可点击) */}
+                                  <div 
+                                    onClick={() => setExpandedRank(isExpanded ? null : idx)}
+                                    style={{
+                                      padding: '12px 16px',
+                                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                      cursor: 'pointer'
+                                    }}
+                                  >
+                                      <div style={{display: 'flex', alignItems: 'center', gap: 12}}>
+                                          <div style={{
+                                              width: 28, height: 28, borderRadius: '50%', 
+                                              background: r.color,
+                                              color: 'white', fontSize: '0.8rem', fontWeight: 700,
+                                              display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                          }}>
+                                              {isCurrent ? <Activity size={16} /> : (idx + 1)}
+                                          </div>
+                                          <div style={{display: 'flex', flexDirection: 'column'}}>
+                                              <span style={{fontWeight: 800, color: r.color, fontSize: '1rem'}}>
+                                                  {r.name}
+                                              </span>
+                                              <span style={{fontSize: '0.75rem', color: '#94a3b8'}}>
+                                                  {new Date(stat.timestamp).toLocaleDateString()} 达成
+                                              </span>
+                                          </div>
                                       </div>
-                                      
-                                      <div style={{display: 'flex', flexDirection: 'column'}}>
-                                          <span style={{fontWeight: 800, color: textColor, fontSize: '0.95rem'}}>
-                                              {r.name}
-                                          </span>
-                                          <span style={{fontSize: '0.75rem', color: '#94a3b8'}}>
-                                              评分要求: {minScore} - {maxScore}
-                                          </span>
+
+                                      <div style={{textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end'}}>
+                                          <div style={{fontSize: '0.8rem', fontWeight: 600, color: '#475569'}}>
+                                              历时 {formatDays(totalDaysSinceStart)}
+                                          </div>
+                                          <div style={{fontSize: '0.7rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 2}}>
+                                              此境驻留 {formatDays(stat.duration)}
+                                              {isExpanded ? <ChevronDown size={12}/> : <ChevronRight size={12}/>}
+                                          </div>
                                       </div>
                                   </div>
-                                  
-                                  {/* 状态标记 */}
-                                  {isCurrent && (
+
+                                  {/* 小段位详情 (折叠区域) */}
+                                  {isExpanded && (
                                       <div style={{
-                                          fontSize: '0.7rem', fontWeight: 700, color: '#fff', 
-                                          background: r.color, padding: '2px 8px', borderRadius: 10
+                                          background: '#f8fafc', 
+                                          borderTop: '1px solid #f1f5f9',
+                                          padding: '8px 16px'
                                       }}>
-                                          当前
+                                          {/* 倒序显示：I 在上，IV 在下，符合晋升逻辑 */}
+                                          {[3, 2, 1, 0].map(subI => {
+                                              const subStat = stat.sub[subI];
+                                              if (!subStat.reached) return null; // 没到过的不显示（针对当前段位未满的情况）
+                                              
+                                              const subLabel = ['IV', 'III', 'II', 'I'][subI];
+                                              const isSubCurrent = isCurrent && subI === Math.min(3, Math.floor(((rankTimeline.currentBigIdx === idx ?  /* need recalc remainder */ 0 : 0) % 20)/5)); 
+                                              // 简化判断：如果是当前大段位，且是最后一个reach的小段位
+                                              // 其实直接看 duration > 0 或者是列表最上面一个即可
+                                              
+                                              return (
+                                                  <div key={subI} style={{
+                                                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                                      padding: '6px 0',
+                                                      borderBottom: subI === 0 ? 'none' : '1px dashed #e2e8f0',
+                                                      fontSize: '0.8rem',
+                                                      color: '#64748b'
+                                                  }}>
+                                                      <div style={{display: 'flex', alignItems: 'center', gap: 8}}>
+                                                          <span style={{
+                                                              fontWeight: 700, 
+                                                              color: r.color, opacity: 0.8,
+                                                              width: 24, textAlign: 'center'
+                                                          }}>{subLabel}</span>
+                                                          <span>{new Date(subStat.timestamp).toLocaleDateString()}</span>
+                                                      </div>
+                                                      <div style={{display:'flex', gap: 10}}>
+                                                          <span>驻留: {formatDays(subStat.duration)}</span>
+                                                      </div>
+                                                  </div>
+                                              )
+                                          })}
                                       </div>
                                   )}
-                                  {!isUnlocked && <Lock size={16} color="#cbd5e1" />}
                               </div>
                           );
                       })}
                   </div>
               ) : (
+                  // --- 历史记录列表视图 (保持不变) ---
                   // --- 原有的：历史记录列表视图 ---
                   (() => {
                     let allRecords: (GameResult & { modeKey: string })[] = [];
