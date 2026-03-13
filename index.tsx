@@ -2738,16 +2738,16 @@ acquireLogs.push(`护基机缘: M=${mFound.toFixed(2)}x。原分 ${pureOriginalS
         }
 
     } else if (gachaTargetType === 'foundation') {
-        // --- 护基丹：炸炉 50% | -2级 30% | -1级 12% | 同级 5% | +1级 3% ---
-        if (r < 0.50) {
+        // --- 护基丹：炸炉 25% | -2级 40% | -1级 20% | 同级 10% | +1级 5% ---
+        if (r < 0.25) {
             msg = '💥 炉火不纯，护基丹药效散尽...';
         } else {
             isSuccess = true;
             let offset = 0;
-            if (r < 0.80) offset = -2;     // 0.50 ~ 0.80 (30%)
-            else if (r < 0.92) offset = -1;// 0.80 ~ 0.92 (12%)
-            else if (r < 0.97) offset = 0; // 0.92 ~ 0.97 (5%)
-            else offset = 1;               // 0.97 ~ 1.00 (3%)
+            if (r < 0.65) offset = -2;
+            else if (r < 0.85) offset = -1;
+            else if (r < 0.95) offset = 0; 
+            else offset = 1;               
             
             const pillData = getPillFromAbsoluteIndex(userAbsIdx + offset);
             finalRealm = pillData.realm;
@@ -4046,11 +4046,11 @@ acquireLogs.push(`护基机缘: M=${mFound.toFixed(2)}x。原分 ${pureOriginalS
                                             目标区间：低二级 ~ 高一级
                                         </div>
                                         <div style={{display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 4}}>
-                                            <div style={{background: '#fee2e2', padding: '8px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.65rem', color: '#b91c1c'}}>炸炉</div><div style={{fontWeight: 700, fontSize: '0.75rem', color: '#991b1b'}}>50%</div></div>
-                                            <div style={{background: '#f1f5f9', padding: '8px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.65rem', color: '#64748b'}}>低2阶</div><div style={{fontWeight: 700, fontSize: '0.75rem', color: '#334155'}}>30%</div></div>
-                                            <div style={{background: '#e0f2fe', padding: '8px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.65rem', color: '#0369a1'}}>低1阶</div><div style={{fontWeight: 700, fontSize: '0.75rem', color: '#0284c7'}}>12%</div></div>
-                                            <div style={{background: '#dcfce7', padding: '8px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.65rem', color: '#15803d'}}>同阶</div><div style={{fontWeight: 700, fontSize: '0.75rem', color: '#166534'}}>5%</div></div>
-                                            <div style={{background: '#fef3c7', padding: '8px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.65rem', color: '#b45309'}}>高1阶</div><div style={{fontWeight: 700, fontSize: '0.75rem', color: '#d97706'}}>3%</div></div>
+                                            <div style={{background: '#fee2e2', padding: '8px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.65rem', color: '#b91c1c'}}>炸炉</div><div style={{fontWeight: 700, fontSize: '0.75rem', color: '#991b1b'}}>25%</div></div>
+                                            <div style={{background: '#f1f5f9', padding: '8px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.65rem', color: '#64748b'}}>低2阶</div><div style={{fontWeight: 700, fontSize: '0.75rem', color: '#334155'}}>40%</div></div>
+                                            <div style={{background: '#e0f2fe', padding: '8px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.65rem', color: '#0369a1'}}>低1阶</div><div style={{fontWeight: 700, fontSize: '0.75rem', color: '#0284c7'}}>20%</div></div>
+                                            <div style={{background: '#dcfce7', padding: '8px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.65rem', color: '#15803d'}}>同阶</div><div style={{fontWeight: 700, fontSize: '0.75rem', color: '#166534'}}>10%</div></div>
+                                            <div style={{background: '#fef3c7', padding: '8px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.65rem', color: '#b45309'}}>高1阶</div><div style={{fontWeight: 700, fontSize: '0.75rem', color: '#d97706'}}>5%</div></div>
                                         </div>
                                         <div style={{fontSize: '0.7rem', color: '#94a3b8', marginTop: 8}}>主要用于炼制低阶保底药效。</div>
                                     </>
