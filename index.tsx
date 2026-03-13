@@ -2171,14 +2171,15 @@ const saveResults = (overrideTrials?: number) => {
     // 1. Focus Pill Drops (凝神丹 - Variable Mode only)
     if (isVariable) {
         let focusFound = false;
-        // 独立掷骰子算机缘
-        const randFocus = Math.random() || 0.0001;
-        const mFocus = 1.4 * Math.log10(3.3 / randFocus);
+        // 独立掷骰子算机缘：t = log10(1/x)
+        const randFocus = Math.random() || 0.00001;
+        const tFocus = Math.log10(1 / randFocus);
+        const mFocus = Math.pow(2, tFocus); // 乘上 2^t
         const refinedScoreFocus = pureOriginalScore * mFocus;
 
         for (let r = 10; r >= 1; r--) {
             if (focusFound) break;
-            const levels = [
+            const levels =[
                 {sub: 2, isReal: true, val: getExpConstant(r, 2, true)},
                 {sub: 2, isReal: false, val: getExpConstant(r, 2, false)},
                 {sub: 1, isReal: true, val: getExpConstant(r, 1, true)},
@@ -2189,7 +2190,6 @@ const saveResults = (overrideTrials?: number) => {
             
             for (const l of levels) {
                 const threshold = l.val / 3;
-                // 【核心：变换前 or 变换后 只要有一个达标即可】
                 if (pureOriginalScore >= threshold || refinedScoreFocus >= threshold) {
                     const pillAbsLevel = r * 6 + l.sub * 2 + (l.isReal ? 1 : 0);
                     
@@ -2201,8 +2201,7 @@ const saveResults = (overrideTrials?: number) => {
                         });
                         
                         const usedScore = Math.max(pureOriginalScore, refinedScoreFocus);
-                        // 【修复】：将 REALMS[r] 改为 (MODE_REALMS[activeMode] || MODE_REALMS['intuition'])[r]
-acquireLogs.push(`凝神机缘: M=${mFocus.toFixed(2)}x。原分 ${pureOriginalScore.toFixed(0)} -> 质变 ${refinedScoreFocus.toFixed(0)}。最高匹配: ${usedScore.toFixed(0)} >= ${threshold.toFixed(0)} (${(MODE_REALMS[activeMode] || MODE_REALMS['intuition'])[r]}${names[l.sub]}${g==='real'?'实品':'虚品'}要求/3)`);
+                        acquireLogs.push(`凝神机缘: t=${tFocus.toFixed(2)}, M=${mFocus.toFixed(2)}x。原分 ${pureOriginalScore.toFixed(0)} -> 质变 ${refinedScoreFocus.toFixed(0)}。最高匹配: ${usedScore.toFixed(0)} >= ${threshold.toFixed(0)} (${(MODE_REALMS[activeMode] || MODE_REALMS['intuition'])[r]}${names[l.sub]}${g==='real'?'实品':'虚品'}要求/3)`);
                     }
                     focusFound = true;
                     break; 
@@ -2213,14 +2212,15 @@ acquireLogs.push(`凝神机缘: M=${mFocus.toFixed(2)}x。原分 ${pureOriginalS
 
     // 2. Foundation Pill Drops (护基丹)
     let foundationFound = false;
-    // 独立掷骰子算机缘
-    const randFound = Math.random() || 0.0001;
-    const mFound = 1.4 * Math.log10(3.3 / randFound);
+    // 独立掷骰子算机缘：t = log10(1/x)
+    const randFound = Math.random() || 0.00001;
+    const tFound = Math.log10(1 / randFound);
+    const mFound = Math.pow(2, tFound); // 乘上 2^t
     const refinedScoreFound = pureOriginalScore * mFound;
 
     for (let r = 10; r >= 1; r--) {
         if (foundationFound) break;
-        const levels = [
+        const levels =[
             {sub: 2, isReal: true, val: getExpConstant(r, 2, true)},
             {sub: 2, isReal: false, val: getExpConstant(r, 2, false)},
             {sub: 1, isReal: true, val: getExpConstant(r, 1, true)},
@@ -2231,7 +2231,6 @@ acquireLogs.push(`凝神机缘: M=${mFocus.toFixed(2)}x。原分 ${pureOriginalS
         
         for (const l of levels) {
             const threshold = l.val;
-            // 【核心：变换前 or 变换后 只要有一个达标即可】
             if (pureOriginalScore >= threshold || refinedScoreFound >= threshold) {
                 const pillAbsLevel = r * 6 + l.sub * 2 + (l.isReal ? 1 : 0);
                 
@@ -2243,8 +2242,7 @@ acquireLogs.push(`凝神机缘: M=${mFocus.toFixed(2)}x。原分 ${pureOriginalS
                     });
                     
                     const usedScore = Math.max(pureOriginalScore, refinedScoreFound);
-                    // 【修复】：同样替换 REALMS[r]
-acquireLogs.push(`护基机缘: M=${mFound.toFixed(2)}x。原分 ${pureOriginalScore.toFixed(0)} -> 质变 ${refinedScoreFound.toFixed(0)}。最高匹配: ${usedScore.toFixed(0)} >= ${threshold.toFixed(0)} (${(MODE_REALMS[activeMode] || MODE_REALMS['intuition'])[r]}${names[l.sub]}${g==='real'?'实品':'虚品'}要求)`);
+                    acquireLogs.push(`护基机缘: t=${tFound.toFixed(2)}, M=${mFound.toFixed(2)}x。原分 ${pureOriginalScore.toFixed(0)} -> 质变 ${refinedScoreFound.toFixed(0)}。最高匹配: ${usedScore.toFixed(0)} >= ${threshold.toFixed(0)} (${(MODE_REALMS[activeMode] || MODE_REALMS['intuition'])[r]}${names[l.sub]}${g==='real'?'实品':'虚品'}要求)`);
                 }
                 foundationFound = true;
                 break; 
@@ -2253,24 +2251,26 @@ acquireLogs.push(`护基机缘: M=${mFound.toFixed(2)}x。原分 ${pureOriginalS
     }
     
     // 3. Preservation Pill (保元丹)
-    if (interval <= 2.5 && dropRealmBase > 0) {
-        // 独立掷骰子算机缘
-        const randPres = Math.random() || 0.0001;
-        const mPres = 1.4 * Math.log10(3.3 / randPres);
+    // 【修改】：放宽至 3 秒以下
+    if (interval < 3.0 && dropRealmBase > 0) {
+        // 独立掷骰子算机缘：t = log10(1/x)
+        const randPres = Math.random() || 0.00001;
+        const tPres = Math.log10(1 / randPres);
         
-        // 分别计算原实力系数和质变后的系数
-        const xBase = Math.min(pureOriginalScore / Math.pow(10, difficulty), 1) * (2.5 - interval);
-        const xRefined = Math.min((pureOriginalScore * mPres) / Math.pow(10, difficulty), 1) * (2.5 - interval);
+        // 【修改公式】：sqrt(oscore / 10^diff) * (3 - 时间间隔)
+        const scoreRatio = Math.max(0, pureOriginalScore / Math.pow(10, difficulty));
+        const xBase = Math.sqrt(scoreRatio) * (3.0 - interval);
         
-        // 取最大值保底
-        const xFinal = Math.max(xBase, xRefined);
+        // 最终结算：保元系数 + min(0.3, 原保元系数) * t
+        const xFinal = xBase + Math.min(0.3, xBase) * tPres;
 
+        // 【修改评级标准】：以 0.3 为公差，>= 1.5 极品(unique)
         let pGrade: PillGrade | null = null;
-        if (xFinal >= 1) pGrade = 'unique';
-        else if (xFinal >= 0.8) pGrade = 'rare';
-        else if (xFinal >= 0.6) pGrade = 'fine';
-        else if (xFinal >= 0.4) pGrade = 'finished';
-        else if (xFinal >= 0.2) pGrade = 'defective';
+        if (xFinal >= 1.5) pGrade = 'unique';
+        else if (xFinal >= 1.2) pGrade = 'rare';
+        else if (xFinal >= 0.9) pGrade = 'fine';
+        else if (xFinal >= 0.6) pGrade = 'finished';
+        else if (xFinal >= 0.3) pGrade = 'defective';
         
         if (pGrade) {
             acquiredPills.push({
@@ -2280,15 +2280,18 @@ acquireLogs.push(`护基机缘: M=${mFound.toFixed(2)}x。原分 ${pureOriginalS
                 grade: pGrade,
                 timestamp: Date.now() + 3
             });
-            acquireLogs.push(`保元机缘: M=${mPres.toFixed(2)}x。基础系数 ${xBase.toFixed(2)} -> 质变系数 ${xRefined.toFixed(2)}。最终结算: x=${xFinal.toFixed(2)}，获得保元丹`);
+            acquireLogs.push(`保元机缘: t=${tPres.toFixed(2)}。基础系数 ${xBase.toFixed(2)} -> 最终结算: x=${xFinal.toFixed(2)}，获得保元丹`);
         }
     }
 
     // 4. Heavenly Pill (通天渡厄丹)
     if (dropRealmBase > 0 && dropRealmBase > nextCultivation.realmLevel) {
-        // 独立掷骰子算神识感应
-        const randHeav = Math.random() || 0.0001;
-        const accBonus = 10 * Math.log10(1 / randHeav);
+        // 独立掷骰子算神识感应：t = log10(1/x)
+        const randHeav = Math.random() || 0.00001;
+        const tHeav = Math.log10(1 / randHeav);
+        
+        // 【修改】：加上 t * 10% 的正确率
+        const accBonus = tHeav * 10;
         const refinedAcc = Math.min(totalAccVal + accBonus, 100);
         
         // 因为总是加分，直接取推演后的准确率
@@ -2305,7 +2308,7 @@ acquireLogs.push(`护基机缘: M=${mFound.toFixed(2)}x。原分 ${pureOriginalS
                  grade: hGrade,
                  timestamp: Date.now() + 2 
              });
-             acquireLogs.push(`神识通感: 补正 +${accBonus.toFixed(1)}%。实际准确率 ${totalAccVal.toFixed(1)}% -> 推演准确率 ${refinedAcc.toFixed(1)}%，获得通天渡厄丹`);
+             acquireLogs.push(`神识通感: t=${tHeav.toFixed(2)}, 补正 +${accBonus.toFixed(1)}%。实际准确率 ${totalAccVal.toFixed(1)}% -> 推演准确率 ${refinedAcc.toFixed(1)}%，获得通天渡厄丹`);
         }
     }
     
