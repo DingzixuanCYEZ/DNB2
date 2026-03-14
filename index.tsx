@@ -2845,6 +2845,22 @@ const saveResults = (overrideTrials?: number) => {
             {' '}| 间隔: {result.interval.toFixed(2)}s 
           </div>
 
+          {/* 【新增】：展示本轮的境界变化 */}
+          <div style={{ marginTop: 12, marginBottom: 8, display: 'flex', justifyContent: 'center' }}>
+             <span style={{background: '#e0f2fe', color: '#0369a1', padding: '4px 12px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600, border: '1px solid #bae6fd'}}>
+                 {formatProgressChange(
+                     result.realmLevel, 
+                     result.stage, 
+                     result.beforeXP, 
+                     result.afterRealmLevel ?? result.realmLevel, 
+                     result.afterStage ?? result.stage, 
+                     result.afterXP, 
+                     'exact', 
+                     result.mode as PlayMode
+                 )}
+             </span>
+          </div>
+
           {result.baseScore !== undefined && (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, marginTop: 12 }}>
               {/* 奖杯旁边只放原分数纯数字，去掉中文 */}
