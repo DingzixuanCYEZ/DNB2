@@ -923,13 +923,13 @@ function calculatePreservationProbs(variance: number) {
     const sigma = Math.sqrt(variance);
     const p0 = standardNormalCDF(0); // 0.5
     
-    // 区间划分: 0.5, 1.2, 1.9, 2.6, 3.3
-    const pFail = (standardNormalCDF(0.5 / sigma) - p0) * 2;
-    const pDef  = (standardNormalCDF(1.2 / sigma) - standardNormalCDF(0.5 / sigma)) * 2;
-    const pFin  = (standardNormalCDF(1.9 / sigma) - standardNormalCDF(1.2 / sigma)) * 2;
-    const pFine = (standardNormalCDF(2.6 / sigma) - standardNormalCDF(1.9 / sigma)) * 2;
-    const pRare = (standardNormalCDF(3.3 / sigma) - standardNormalCDF(2.6 / sigma)) * 2;
-    const pUni  = (1.0 - standardNormalCDF(3.3 / sigma)) * 2;
+    // 【修改】：拉大判定区间(0.6, 1.4, 2.2, 3.0, 3.8)，使得高品级概率大幅降低
+    const pFail = (standardNormalCDF(0.6 / sigma) - p0) * 2;
+    const pDef  = (standardNormalCDF(1.4 / sigma) - standardNormalCDF(0.6 / sigma)) * 2;
+    const pFin  = (standardNormalCDF(2.2 / sigma) - standardNormalCDF(1.4 / sigma)) * 2;
+    const pFine = (standardNormalCDF(3.0 / sigma) - standardNormalCDF(2.2 / sigma)) * 2;
+    const pRare = (standardNormalCDF(3.8 / sigma) - standardNormalCDF(3.0 / sigma)) * 2;
+    const pUni  = (1.0 - standardNormalCDF(3.8 / sigma)) * 2;
     
     return { fail: pFail, def: pDef, fin: pFin, fine: pFine, rare: pRare, uni: pUni };
 }
@@ -996,7 +996,7 @@ function getPillDescription(pill: Pill): string {
     return `减缓或阻止冲关失败时的修为倒退。丹药境界需匹配。`;
   }
   if (pill.type === 'preservation') {
-      const bases = { unique: 16, rare: 22, fine: 30, finished: 40, defective: 52 };
+      const bases = { unique: 16, rare: 22, fine: 28, finished: 36, defective: 48 };
       const base = bases[pill.grade as keyof typeof bases] || 64;
       return `改变得分算法底数为 ${base} (原64)，降低失误惩罚。仅对低于等于自身大境界(N≤${pill.realm})的难度生效。`;
   }
@@ -2038,7 +2038,7 @@ const saveResults = (overrideTrials?: number) => {
     
     if (usedPill && usedPill.type === 'preservation') {
         if (n_floor <= usedPill.realm) {
-            const bases = { unique: 16, rare: 22, fine: 30, finished: 40, defective: 52 };
+            const bases = { unique: 16, rare: 22, fine: 28, finished: 36, defective: 48 };
             formulaBase = bases[usedPill.grade as keyof typeof bases] || 64;
             pillEffectLog = `保元丹生效: 惩罚底数降至${formulaBase}`;
         } else {
@@ -2261,16 +2261,16 @@ const saveResults = (overrideTrials?: number) => {
         const scoreRatio = Math.max(0, pureOriginalScore / Math.pow(10, difficulty));
         const xBase = Math.sqrt(scoreRatio) * (3.0 - interval);
         
-        // 最终结算：保元系数 + min(0.3, 原保元系数) * t
-        const xFinal = xBase + Math.min(0.3, xBase) * tPres;
+        // 最终结算：保元系数 + min(0.25, 原保元系数) * t
+        const xFinal = xBase + Math.min(0.25, xBase) * tPres;
 
-        // 【修改评级标准】：以 0.3 为公差，>= 1.5 极品(unique)
+        // 【修改评级标准】：以 0.25 为公差，>= 1.25 极品(unique)
         let pGrade: PillGrade | null = null;
-        if (xFinal >= 1.5) pGrade = 'unique';
-        else if (xFinal >= 1.2) pGrade = 'rare';
-        else if (xFinal >= 0.9) pGrade = 'fine';
-        else if (xFinal >= 0.6) pGrade = 'finished';
-        else if (xFinal >= 0.3) pGrade = 'defective';
+        if (xFinal >= 1.25) pGrade = 'unique';
+        else if (xFinal >= 1) pGrade = 'rare';
+        else if (xFinal >= 0.75) pGrade = 'fine';
+        else if (xFinal >= 0.5) pGrade = 'finished';
+        else if (xFinal >= 0.25) pGrade = 'defective';
         
         if (pGrade) {
             acquiredPills.push({
@@ -3143,7 +3143,7 @@ const saveResults = (overrideTrials?: number) => {
       }
 
       if (pill.type === 'preservation') {
-          const bases = { unique: 16, rare: 22, fine: 30, finished: 40, defective: 52 };
+          const bases = { unique: 16, rare: 22, fine: 28, finished: 36, defective: 48 };
           return `✅ 生效：得分算法底数降至 ${bases[pill.grade as keyof typeof bases] || 64} (限难度N≤${pill.realm}时有效)。`;
       }
       
