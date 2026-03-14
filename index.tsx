@@ -1250,8 +1250,8 @@ function calculateBaseScore(realm: number, subRealmIndex: number): number {
 }
 // --- 补充缺失的函数 ---
 function getHeavenlyProbs() {
-    // 炸炉 70% | 人品 20% | 地品 8% | 天品 2%
-    return { fail: 0.70, human: 0.20, earth: 0.08, heaven: 0.02 };
+    // 炸炉 50% | 人品 30% | 地品 15% | 天品 5%
+    return { fail: 0.50, human: 0.30, earth: 0.15, heaven: 0.05 };
 }
 // 将用户的 stage (0-7) 映射到丹药的 subRealm (0-4)
 function userStageToSubIndex(stage: number): number {
@@ -2791,15 +2791,15 @@ const saveResults = (overrideTrials?: number) => {
         }
 
     } else if (gachaTargetType === 'heavenly') {
-        // --- 通天丹：炸炉 70% | 人品 20% | 地品 8% | 天品 2% ---
+        // --- 通天丹：炸炉 50% | 人品 30% | 地品 15% | 天品 5% ---
         finalRealm = cultivation.realmLevel + 1;
-        if (r < 0.70) {
+        if (r < 0.50) {
             msg = '🌩️ 强夺造化遭天谴，通天丹化为齑粉！';
         } else {
             isSuccess = true;
-            if (r < 0.90) finalGrade = 'human';       // 0.70 ~ 0.90 (20%)
-            else if (r < 0.98) finalGrade = 'earth';  // 0.90 ~ 0.98 (8%)
-            else finalGrade = 'heaven';               // 0.98 ~ 1.00 (2%)
+            if (r < 0.80) finalGrade = 'human';       // 0.50 ~ 0.80 (30%)
+            else if (r < 0.95) finalGrade = 'earth';  // 0.80 ~ 0.95 (15%)
+            else finalGrade = 'heaven';               // 0.95 ~ 1.00 (5%)
             msg = '🌈 天降祥瑞，夺天地造化成丹！';
         }
     }
@@ -4127,7 +4127,7 @@ const saveResults = (overrideTrials?: number) => {
                                             <div style={{background: '#e0f2fe', padding: '8px 0', borderRadius: 6, textAlign: 'center'}}><div style={{fontSize: '0.7rem', color: '#0369a1'}}>地品</div><div style={{fontWeight: 800, color: '#0284c7'}}>{(probs.earth * 100).toFixed(0)}%</div></div>
                                             <div style={{background: '#fffbeb', padding: '8px 0', borderRadius: 6, border: '1px solid #fcd34d', textAlign: 'center'}}><div style={{fontSize: '0.7rem', color: '#b45309'}}>天品</div><div style={{fontWeight: 800, color: '#d97706'}}>{(probs.heaven * 100).toFixed(0)}%</div></div>
                                         </div>
-                                        <div style={{fontSize: '0.7rem', color: '#94a3b8', marginTop: 12}}>极易遭受天谴炸炉。成功后随机赋予天地人三品。</div>
+                                        <div style={{fontSize: '0.7rem', color: '#94a3b8', marginTop: 12}}>易遭受天谴炸炉。成功后随机赋予天地人三品。</div>
                                     </>
                                 );
                             }
