@@ -923,13 +923,14 @@ function calculatePreservationProbs(variance: number) {
     const sigma = Math.sqrt(variance);
     const p0 = standardNormalCDF(0); // 0.5
     
-    // 【修改】：拉大判定区间(0.6, 1.4, 2.2, 3.0, 3.8)，使得高品级概率大幅降低
+    // 区间划分由 0.6, 1.4, 2.2, 3.0, 3.8
+    // 修改为：0.6, 1.5, 2.7, 4.2, 6.2 (越往后区间越大，极难到达)
     const pFail = (standardNormalCDF(0.6 / sigma) - p0) * 2;
-    const pDef  = (standardNormalCDF(1.4 / sigma) - standardNormalCDF(0.6 / sigma)) * 2;
-    const pFin  = (standardNormalCDF(2.2 / sigma) - standardNormalCDF(1.4 / sigma)) * 2;
-    const pFine = (standardNormalCDF(3.0 / sigma) - standardNormalCDF(2.2 / sigma)) * 2;
-    const pRare = (standardNormalCDF(3.8 / sigma) - standardNormalCDF(3.0 / sigma)) * 2;
-    const pUni  = (1.0 - standardNormalCDF(3.8 / sigma)) * 2;
+    const pDef  = (standardNormalCDF(1.5 / sigma) - standardNormalCDF(0.6 / sigma)) * 2;
+    const pFin  = (standardNormalCDF(2.7 / sigma) - standardNormalCDF(1.5 / sigma)) * 2;
+    const pFine = (standardNormalCDF(4.2 / sigma) - standardNormalCDF(2.7 / sigma)) * 2;
+    const pRare = (standardNormalCDF(6.2 / sigma) - standardNormalCDF(4.2 / sigma)) * 2;
+    const pUni  = (1.0 - standardNormalCDF(6.2 / sigma)) * 2;
     
     return { fail: pFail, def: pDef, fin: pFin, fine: pFine, rare: pRare, uni: pUni };
 }
