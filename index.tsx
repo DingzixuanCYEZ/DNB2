@@ -923,14 +923,20 @@ function calculatePreservationProbs(variance: number) {
     const sigma = Math.sqrt(variance);
     const p0 = standardNormalCDF(0); // 0.5
     
-    // 区间划分由 0.6, 1.4, 2.2, 3.0, 3.8
-    // 修改为：0.6, 1.5, 2.7, 4.2, 6.2 (越往后区间越大，极难到达)
-    const pFail = (standardNormalCDF(0.6 / sigma) - p0) * 2;
-    const pDef  = (standardNormalCDF(1.5 / sigma) - standardNormalCDF(0.6 / sigma)) * 2;
-    const pFin  = (standardNormalCDF(2.7 / sigma) - standardNormalCDF(1.5 / sigma)) * 2;
-    const pFine = (standardNormalCDF(4.2 / sigma) - standardNormalCDF(2.7 / sigma)) * 2;
-    const pRare = (standardNormalCDF(6.2 / sigma) - standardNormalCDF(4.2 / sigma)) * 2;
-    const pUni  = (1.0 - standardNormalCDF(6.2 / sigma)) * 2;
+    // 【修改】：优化动态阈值
+    // 让高阶门槛在低倍率时不过分严苛，在高倍率时不过分收紧
+    const t1 = 0.55;
+    const t2 = 1.20;
+    const t3 = 1.6 + (sigma * 0.2);
+    const t4 = 1.9 + (sigma * 0.5);
+    const t5 = 2.2 + (sigma * 0.9);
+    
+    const pFail = (standardNormalCDF(t1 / sigma) - p0) * 2;
+    const pDef  = (standardNormalCDF(t2 / sigma) - standardNormalCDF(t1 / sigma)) * 2;
+    const pFin  = (standardNormalCDF(t3 / sigma) - standardNormalCDF(t2 / sigma)) * 2;
+    const pFine = (standardNormalCDF(t4 / sigma) - standardNormalCDF(t3 / sigma)) * 2;
+    const pRare = (standardNormalCDF(t5 / sigma) - standardNormalCDF(t4 / sigma)) * 2;
+    const pUni  = (1.0 - standardNormalCDF(t5 / sigma)) * 2;
     
     return { fail: pFail, def: pDef, fin: pFin, fine: pFine, rare: pRare, uni: pUni };
 }
