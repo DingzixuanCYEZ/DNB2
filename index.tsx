@@ -923,13 +923,16 @@ function calculatePreservationProbs(variance: number) {
     const sigma = Math.sqrt(variance);
     const p0 = standardNormalCDF(0); // 0.5
     
-    // 【修改】：优化动态阈值
-    // 让高阶门槛在低倍率时不过分严苛，在高倍率时不过分收紧
-    const t1 = 0.55;
-    const t2 = 1.20;
-    const t3 = 1.6 + (sigma * 0.2);
-    const t4 = 1.9 + (sigma * 0.5);
-    const t5 = 2.2 + (sigma * 0.9);
+    // 【无上限·平滑成长版】：
+    // 使用 t = C * sigma^0.65 模型。
+    // 这意味着判定门槛的增长速度永远慢于你的实力增长速度。
+    // 跨度越高，高品质概率越大，完全没有封顶限制！
+    const power = Math.pow(sigma, 0.65);
+    const t1 = 0.5 * power;
+    const t2 = 1.0 * power;
+    const t3 = 1.7 * power;
+    const t4 = 2.4 * power;
+    const t5 = 3.0 * power;
     
     const pFail = (standardNormalCDF(t1 / sigma) - p0) * 2;
     const pDef  = (standardNormalCDF(t2 / sigma) - standardNormalCDF(t1 / sigma)) * 2;
